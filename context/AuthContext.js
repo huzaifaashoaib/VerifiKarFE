@@ -28,29 +28,58 @@ export function AuthProvider({ children }) {
 
   const login = async (email, password) => {
     try {
-      // Mock authentication - remove this when you have a real backend
-      // Simulate network delay
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      console.log('Login started for:', email);
+      
+      // OAuth2 password flow requires application/x-www-form-urlencoded
+      const formData = new URLSearchParams();
+      formData.append('username', email.trim()); // OAuth2 uses 'username' field
+      formData.append('password', password);
+      formData.append('grant_type', 'password');
+      
+      // Send login request to backend using OAuth2 format
+      const response = await fetch('http://192.168.0.105:8000/auth/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: formData.toString(),
+      });
 
-      // Check if user exists in local storage
-      const existingUsers = await AsyncStorage.getItem('registeredUsers');
-      const users = existingUsers ? JSON.parse(existingUsers) : [];
-      
-      const foundUser = users.find(u => u.email === email && u.password === password);
-      
-      if (foundUser) {
-        const { password: _, ...userWithoutPassword } = foundUser;
-        const token = 'mock-token-' + Date.now();
+      const data = await response.json();
+      console.log('Login response:', response.status, data);
+
+      if (response.ok) {
+        // Success - Store token and user data from the response
+        const tokenData = data.details || data;
         
-        await AsyncStorage.setItem('authToken', token);
-        await AsyncStorage.setItem('userData', JSON.stringify(userWithoutPassword));
-        setUser(userWithoutPassword);
+        if (tokenData.access_token) {
+          await AsyncStorage.setItem('authToken', tokenData.access_token);
+        }
+        
+        // Store user data
+        const userData = {
+          email: email,
+          // Add any additional user data from backend if available
+        };
+        
+        await AsyncStorage.setItem('userData', JSON.stringify(userData));
+        setUser(userData);
+        
+        console.log('Login successful!');
         return { success: true };
       } else {
-        return { success: false, message: 'Invalid email or password' };
+        // Server returned an error
+        const errorDetail = data.detail || {};
+        const errorMessage = errorDetail.details?.message || errorDetail.message || 'Invalid email or password';
+        console.log('Login failed:', errorMessage);
+        return { success: false, message: errorMessage };
       }
     } catch (error) {
-      return { success: false, message: 'An error occurred. Please try again.' };
+      console.log('Login error:', error);
+      return { 
+        success: false, 
+        message: 'Unable to connect to the server. Please check your internet connection.' 
+      };
     }
   };
 
@@ -58,49 +87,53 @@ export function AuthProvider({ children }) {
     try {
       console.log('Signup started for:', email);
       
-      // Mock authentication - remove this when you have a real backend
-      // Simulate network delay
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Send signup request to backend
+      const response = await fetch('http://192.168.0.105:8000/auth/signup', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: email.trim(),
+          password: password,
+        }),
+      });
 
-      // Check if email already exists
-      const existingUsers = await AsyncStorage.getItem('registeredUsers');
-      const users = existingUsers ? JSON.parse(existingUsers) : [];
-      
-      console.log('Existing users count:', users.length);
-      
-      if (users.find(u => u.email === email)) {
-        console.log('Email already exists');
-        return { success: false, message: 'Email already registered' };
+      const data = await response.json();
+      console.log('Signup response:', response.status, data);
+
+      if (response.ok) {
+        // Success - Store token and user data
+        if (data.access_token) {
+          await AsyncStorage.setItem('authToken', data.access_token);
+        }
+        
+        // Store user data (if backend returns user info)
+        const userData = {
+          user_id: data.user_id || data.id,
+          name: name,
+          email: email,
+          createdAt: new Date().toISOString(),
+          ...data.user, // Include any additional user data from backend
+        };
+        
+        await AsyncStorage.setItem('userData', JSON.stringify(userData));
+        setUser(userData);
+        
+        console.log('Signup successful!');
+        return { success: true };
+      } else {
+        // Server returned an error
+        const errorMessage = data.detail || data.message || 'Signup failed. Please try again.';
+        console.log('Signup failed:', errorMessage);
+        return { success: false, message: errorMessage };
       }
-
-      // Create new user with unique ID
-      const newUser = {
-        user_id: 'user-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9),
-        name,
-        email,
-        password, // In real app, this would be hashed on backend
-        createdAt: new Date().toISOString(),
-      };
-
-      console.log('Creating new user with ID:', newUser.user_id);
-
-      // Save to local storage
-      users.push(newUser);
-      await AsyncStorage.setItem('registeredUsers', JSON.stringify(users));
-
-      // Login the user
-      const { password: _, ...userWithoutPassword } = newUser;
-      const token = 'mock-token-' + Date.now();
-      
-      await AsyncStorage.setItem('authToken', token);
-      await AsyncStorage.setItem('userData', JSON.stringify(userWithoutPassword));
-      setUser(userWithoutPassword);
-      
-      console.log('Signup successful!');
-      return { success: true };
     } catch (error) {
       console.log('Signup error:', error);
-      return { success: false, message: 'An error occurred: ' + error.message };
+      return { 
+        success: false, 
+        message: 'Unable to connect to the server. Please check your internet connection.' 
+      };
     }
   };
 

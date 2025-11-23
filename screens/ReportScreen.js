@@ -1,8 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import { useState } from 'react';
-import { Alert, Image, Keyboard, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, Keyboard, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import MapView, { Marker } from 'react-native-maps';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../styles/ThemeContext';
@@ -18,6 +19,7 @@ export default function ReportScreen() {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [showMapModal, setShowMapModal] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [selectedCoordinates, setSelectedCoordinates] = useState(null);
   const [mapRegion, setMapRegion] = useState({
     latitude: 37.78825,
@@ -329,19 +331,131 @@ export default function ReportScreen() {
     }
   };
 
-  const confirmSubmit = () => {
-    // TODO: Connect this to your backend API later
-    console.log({ description, location, media });
-    setShowConfirmModal(false);
-    alert('Report submitted successfully!');
-    setDescription('');
-    setLocation('');
-    setMedia([]);
-    setSelectedCoordinates(null);
-    setErrors({
-      description: '',
-      location: ''
-    });
+  const confirmSubmit = async () => {
+    try {
+      setIsSubmitting(true);
+      setShowConfirmModal(false);
+
+      // 1. Retrieve JWT token from AsyncStorage
+      const token = await AsyncStorage.getItem('authToken');
+      if (!token) {
+        Alert.alert('Authentication Required', 'Please log in to submit a report.');
+        setIsSubmitting(false);
+        return;
+      }
+
+      // 2. Prepare location data in the format backend expects: {"lat": number, "lon": number}
+      let locationData;
+      if (selectedCoordinates) {
+        locationData = {
+          lat: selectedCoordinates.latitude,
+          lon: selectedCoordinates.longitude
+        };
+      } else {
+        // If no coordinates selected, try to geocode the location string
+        try {
+          const results = await Location.geocodeAsync(location);
+          if (results && results.length > 0) {
+            locationData = {
+              lat: results[0].latitude,
+              lon: results[0].longitude
+            };
+          } else {
+            Alert.alert('Invalid Location', 'Please select a valid location or use the map picker.');
+            setIsSubmitting(false);
+            return;
+          }
+        } catch (error) {
+          Alert.alert('Location Error', 'Unable to determine coordinates for this location.');
+          setIsSubmitting(false);
+          return;
+        }
+      }
+
+      // 3. Prepare FormData with multipart/form-data
+      const formData = new FormData();
+      formData.append('raw_text', description);
+      formData.append('location', JSON.stringify(locationData));
+
+      // 4. Separate media into images and videos arrays
+      const images = media.filter(item => item.type === 'image');
+      const videos = media.filter(item => item.type === 'video');
+
+      // 5. Append image files
+      images.forEach((image, index) => {
+        const uriParts = image.uri.split('.');
+        const fileType = uriParts[uriParts.length - 1];
+        
+        formData.append('images', {
+          uri: image.uri,
+          name: `image_${index}.${fileType}`,
+          type: `image/${fileType}`,
+        });
+      });
+
+      // 6. Append video files
+      videos.forEach((video, index) => {
+        const uriParts = video.uri.split('.');
+        const fileType = uriParts[uriParts.length - 1];
+        
+        formData.append('videos', {
+          uri: video.uri,
+          name: `video_${index}.${fileType}`,
+          type: `video/${fileType}`,
+        });
+      });
+
+      // 7. Send POST request to backend
+      console.log('Submitting report to backend...');
+      const response = await fetch('http://192.168.0.105:8000/reports/submit', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          // Don't set Content-Type header - fetch will set it automatically with boundary for multipart/form-data
+        },
+        body: formData,
+      });
+
+      const data = await response.json();
+      console.log('Submit response:', response.status, data);
+
+      // 8. Handle response
+      if (response.ok) {
+        const reportDetails = data.details || data;
+        const reportId = reportDetails.raw_report_id || reportDetails.id;
+        
+        Alert.alert(
+          'Success!',
+          `Report submitted successfully!\nReport ID: ${reportId}`,
+          [
+            {
+              text: 'OK',
+              onPress: () => {
+                // Clear form
+                setDescription('');
+                setLocation('');
+                setMedia([]);
+                setSelectedCoordinates(null);
+                setErrors({ description: '', location: '' });
+              }
+            }
+          ]
+        );
+      } else {
+        // Handle validation errors from backend
+        const errorDetail = data.detail || {};
+        const errorMessage = errorDetail.details || errorDetail.message || 'Failed to submit report. Please try again.';
+        Alert.alert('Submission Failed', errorMessage);
+      }
+    } catch (error) {
+      console.error('Submit error:', error);
+      Alert.alert(
+        'Network Error',
+        'Unable to connect to the server. Please check your internet connection and try again.'
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -649,35 +763,48 @@ export default function ReportScreen() {
               Your report will be submitted anonymously and reviewed by our team.
             </Text>
 
-            <View style={{ flexDirection: 'row', gap: 12 }}>
-              <TouchableOpacity
-                style={{
-                  flex: 1,
-                  backgroundColor: isDark ? '#2a2a2a' : '#f5f5f5',
-                  paddingVertical: 12,
-                  borderRadius: 8,
-                  alignItems: 'center',
-                  borderWidth: 1,
-                  borderColor: isDark ? '#404040' : '#ddd',
-                }}
-                onPress={() => setShowConfirmModal(false)}
-              >
-                <Text style={{ color: colors.text, fontSize: 16, fontWeight: '600' }}>Cancel</Text>
-              </TouchableOpacity>
+            {isSubmitting ? (
+              <View style={{ alignItems: 'center', paddingVertical: 20 }}>
+                <ActivityIndicator size="large" color={colors.primary} />
+                <Text style={{ 
+                  marginTop: 12, 
+                  fontSize: 14, 
+                  color: colors.gray 
+                }}>
+                  Submitting report...
+                </Text>
+              </View>
+            ) : (
+              <View style={{ flexDirection: 'row', gap: 12 }}>
+                <TouchableOpacity
+                  style={{
+                    flex: 1,
+                    backgroundColor: isDark ? '#2a2a2a' : '#f5f5f5',
+                    paddingVertical: 12,
+                    borderRadius: 8,
+                    alignItems: 'center',
+                    borderWidth: 1,
+                    borderColor: isDark ? '#404040' : '#ddd',
+                  }}
+                  onPress={() => setShowConfirmModal(false)}
+                >
+                  <Text style={{ color: colors.text, fontSize: 16, fontWeight: '600' }}>Cancel</Text>
+                </TouchableOpacity>
 
-              <TouchableOpacity
-                style={{
-                  flex: 1,
-                  backgroundColor: colors.primary,
-                  paddingVertical: 12,
-                  borderRadius: 8,
-                  alignItems: 'center',
-                }}
-                onPress={confirmSubmit}
-              >
-                <Text style={{ color: '#fff', fontSize: 16, fontWeight: '600' }}>Confirm</Text>
-              </TouchableOpacity>
-            </View>
+                <TouchableOpacity
+                  style={{
+                    flex: 1,
+                    backgroundColor: colors.primary,
+                    paddingVertical: 12,
+                    borderRadius: 8,
+                    alignItems: 'center',
+                  }}
+                  onPress={confirmSubmit}
+                >
+                  <Text style={{ color: '#fff', fontSize: 16, fontWeight: '600' }}>Confirm</Text>
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
         </View>
       </Modal>
