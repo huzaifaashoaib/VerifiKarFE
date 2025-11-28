@@ -5,6 +5,7 @@ import * as Location from 'expo-location';
 import { useState } from 'react';
 import { ActivityIndicator, Alert, Image, Keyboard, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import MapView, { Marker } from 'react-native-maps';
+import { API_BASE_URL } from '../config';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../styles/ThemeContext';
 
@@ -407,7 +408,7 @@ export default function ReportScreen() {
 
       // 7. Send POST request to backend
       console.log('Submitting report to backend...');
-      const response = await fetch('http://192.168.0.105:8000/reports/submit', {
+      const response = await fetch(`${API_BASE_URL}/reports/submit`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,

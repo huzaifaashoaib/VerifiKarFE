@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createContext, useContext, useEffect, useState } from 'react';
+import { API_BASE_URL } from '../config';
 
 const AuthContext = createContext(null);
 
@@ -37,7 +38,7 @@ export function AuthProvider({ children }) {
       formData.append('grant_type', 'password');
       
       // Send login request to backend using OAuth2 format
-      const response = await fetch('http://192.168.0.105:8000/auth/login', {
+      const response = await fetch(`${API_BASE_URL}/auth/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
@@ -88,7 +89,7 @@ export function AuthProvider({ children }) {
       console.log('Signup started for:', email);
       
       // Send signup request to backend
-      const response = await fetch('http://192.168.0.105:8000/auth/signup', {
+      const response = await fetch(`${API_BASE_URL}/auth/signup`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
