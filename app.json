@@ -47,6 +47,17 @@
           "photosPermission": "The app needs access to your photos to let you share them in reports.",
           "cameraPermission": "The app needs access to your camera to let you take photos for reports."
         }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Allow VerifiKar to use your location to show nearby posts.",
+          "locationAlwaysPermission": "Allow VerifiKar to use your location to show nearby posts.",
+          "locationWhenInUsePermission": "Allow VerifiKar to use your location to show nearby posts.",
+          "isIosBackgroundLocationEnabled": false,
+          "isAndroidBackgroundLocationEnabled": false,
+          "isAndroidForegroundServiceEnabled": false
+        }
       ]
     ]
   }
