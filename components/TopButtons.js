@@ -1,30 +1,37 @@
-
-import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
-import { useState } from 'react';
-import { Modal, StyleSheet, Text, TouchableOpacity, View, ScrollView, Switch } from 'react-native';
-import { typography } from '../styles/commonStyles';
-import { useTheme } from '../styles/ThemeContext';
+import { Ionicons } from "@expo/vector-icons";
+import { useNavigation } from "@react-navigation/native";
+import { useState } from "react";
+import {
+  Modal,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+  ScrollView,
+  TextInput,
+} from "react-native";
+import { useTheme } from "../styles/ThemeContext";
 
 export default function TopButtons() {
   const navigation = useNavigation();
   const { colors, isDark } = useTheme();
   const [showFilterModal, setShowFilterModal] = useState(false);
   const [showSearchModal, setShowSearchModal] = useState(false);
-  
+  const [searchQuery, setSearchQuery] = useState("");
+
   // Filter states
   const [radiusKm, setRadiusKm] = useState(10);
-  const [selectedCategories, setSelectedCategories] = useState(['all']);
+  const [selectedCategories, setSelectedCategories] = useState(["all"]);
   const [minCredibility, setMinCredibility] = useState(0.5);
   const [maxDaysOld, setMaxDaysOld] = useState(7);
 
   const categories = [
-    { id: 'all', name: 'All', icon: 'grid-outline' },
-    { id: 'Accident', name: 'Accident', icon: 'car-outline' },
-    { id: 'Crime', name: 'Crime', icon: 'warning-outline' },
-    { id: 'Infrastructure', name: 'Infrastructure', icon: 'construct-outline' },
-    { id: 'Social', name: 'Social', icon: 'people-outline' },
-    { id: 'Emergency', name: 'Emergency', icon: 'alert-circle-outline' },
+    { id: "all", name: "All", icon: "apps" },
+    { id: "Accident", name: "Accident", icon: "car" },
+    { id: "Crime", name: "Crime", icon: "alert-circle" },
+    { id: "Infrastructure", name: "Infrastructure", icon: "construct" },
+    { id: "Social", name: "Social", icon: "people" },
+    { id: "Emergency", name: "Emergency", icon: "warning" },
   ];
 
   const radiusOptions = [5, 10, 15, 25, 50];
@@ -32,100 +39,211 @@ export default function TopButtons() {
   const daysOptions = [1, 3, 7, 14, 30];
 
   const toggleCategory = (categoryId) => {
-    if (categoryId === 'all') {
-      setSelectedCategories(['all']);
+    if (categoryId === "all") {
+      setSelectedCategories(["all"]);
     } else {
-      const filtered = selectedCategories.filter(id => id !== 'all');
+      const filtered = selectedCategories.filter((id) => id !== "all");
       if (filtered.includes(categoryId)) {
-        const newSelection = filtered.filter(id => id !== categoryId);
-        setSelectedCategories(newSelection.length === 0 ? ['all'] : newSelection);
+        const newSelection = filtered.filter((id) => id !== categoryId);
+        setSelectedCategories(newSelection.length === 0 ? ["all"] : newSelection);
       } else {
         setSelectedCategories([...filtered, categoryId]);
       }
     }
   };
 
+  const getActiveFiltersCount = () => {
+    let count = 0;
+    if (radiusKm !== 10) count++;
+    if (!selectedCategories.includes("all")) count++;
+    if (minCredibility !== 0.5) count++;
+    if (maxDaysOld !== 7) count++;
+    return count;
+  };
+
+  const activeFilters = getActiveFiltersCount();
+
   return (
     <>
-      <View style={styles.container}>
-        <Text style={[styles.appName, { color: colors.primary }]}>VerifiKar</Text>
-        <View style={styles.buttons}>
-          <TouchableOpacity onPress={() => setShowSearchModal(true)}>
-            <Ionicons name="search-outline" size={24} color={colors.text} />
+      {/* Modern Header */}
+      <View style={[styles.header, { backgroundColor: colors.background }]}>
+        {/* Logo */}
+        <View style={styles.logoSection}>
+          <Text style={{ fontSize: 24, marginRight: 6 }}>🛡️</Text>
+          <Text style={[styles.logoVerifi, { color: colors.text }]}>Verifi</Text>
+          <Text style={[styles.logoKar, { color: colors.primary }]}>Kar</Text>
+        </View>
+
+        {/* Action Buttons */}
+        <View style={styles.actionButtons}>
+          <TouchableOpacity
+            style={[styles.iconButton, { backgroundColor: isDark ? "#1e1e1e" : "#f5f5f5" }]}
+            onPress={() => setShowSearchModal(true)}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="search" size={20} color={colors.text} />
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => setShowFilterModal(true)}>
-            <Ionicons name="filter-outline" size={24} color={colors.text} />
+
+          <TouchableOpacity
+            style={[styles.iconButton, { backgroundColor: isDark ? "#1e1e1e" : "#f5f5f5" }]}
+            onPress={() => setShowFilterModal(true)}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="options" size={20} color={colors.text} />
+            {activeFilters > 0 && (
+              <View style={[styles.filterBadge, { backgroundColor: colors.primary }]}>
+                <Text style={styles.filterBadgeText}>{activeFilters}</Text>
+              </View>
+            )}
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => navigation.openDrawer()}>
-            <Ionicons name="settings-outline" size={24} color={colors.text} />
+
+          <TouchableOpacity
+            style={[styles.iconButton, { backgroundColor: isDark ? "#1e1e1e" : "#f5f5f5" }]}
+            onPress={() => navigation.openDrawer()}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="menu" size={20} color={colors.text} />
           </TouchableOpacity>
         </View>
       </View>
 
-      {/* Search Modal */}
+      {/* Search Modal - Modern Fullscreen */}
       <Modal
         visible={showSearchModal}
-        animationType="slide"
+        animationType="fade"
         transparent={true}
         onRequestClose={() => setShowSearchModal(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
-            <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: colors.text }]}>Search Posts</Text>
-              <TouchableOpacity onPress={() => setShowSearchModal(false)}>
-                <Ionicons name="close" size={28} color={colors.text} />
-              </TouchableOpacity>
+        <View style={[styles.searchModalContainer, { backgroundColor: colors.background }]}>
+          {/* Search Header */}
+          <View style={styles.searchHeader}>
+            <TouchableOpacity
+              style={[styles.backButton, { backgroundColor: isDark ? "#1e1e1e" : "#f5f5f5" }]}
+              onPress={() => setShowSearchModal(false)}
+            >
+              <Ionicons name="arrow-back" size={22} color={colors.text} />
+            </TouchableOpacity>
+
+            <View style={[styles.searchInputContainer, { backgroundColor: isDark ? "#1e1e1e" : "#f5f5f5" }]}>
+              <Ionicons name="search" size={18} color={colors.gray} />
+              <TextInput
+                style={[styles.searchInput, { color: colors.text }]}
+                placeholder="Search reports..."
+                placeholderTextColor={colors.gray}
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                autoFocus
+              />
+              {searchQuery.length > 0 && (
+                <TouchableOpacity onPress={() => setSearchQuery("")}>
+                  <Ionicons name="close-circle" size={18} color={colors.gray} />
+                </TouchableOpacity>
+              )}
             </View>
-            <View style={styles.modalBody}>
-              <Text style={[styles.comingSoonText, { color: colors.gray }]}>
-                Search functionality coming soon!
-              </Text>
-            </View>
+          </View>
+
+          {/* Search Content */}
+          <View style={styles.searchContent}>
+            {searchQuery.length === 0 ? (
+              <View style={styles.searchPlaceholder}>
+                <View style={[styles.searchIconBig, { backgroundColor: isDark ? "#1e1e1e" : "#f5f5f5" }]}>
+                  <Ionicons name="search" size={40} color={colors.gray} />
+                </View>
+                <Text style={[styles.searchPlaceholderTitle, { color: colors.text }]}>
+                  Search Reports
+                </Text>
+                <Text style={[styles.searchPlaceholderText, { color: colors.gray }]}>
+                  Find reports by location, description, or category
+                </Text>
+
+                {/* Recent Searches */}
+                <View style={styles.recentSection}>
+                  <Text style={[styles.recentTitle, { color: colors.gray }]}>SUGGESTIONS</Text>
+                  {["Accident near me", "Road closure", "Fire incident", "Traffic update"].map((item, index) => (
+                    <TouchableOpacity
+                      key={index}
+                      style={styles.recentItem}
+                      onPress={() => setSearchQuery(item)}
+                    >
+                      <Ionicons name="trending-up" size={18} color={colors.gray} />
+                      <Text style={[styles.recentText, { color: colors.text }]}>{item}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            ) : (
+              <View style={styles.searchResults}>
+                <Text style={[styles.searchResultsInfo, { color: colors.gray }]}>
+                  Search functionality coming soon...
+                </Text>
+              </View>
+            )}
           </View>
         </View>
       </Modal>
 
-      {/* Filter Modal */}
+      {/* Filter Modal - Modern Bottom Sheet */}
       <Modal
         visible={showFilterModal}
         animationType="slide"
         transparent={true}
         onRequestClose={() => setShowFilterModal(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
-            <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: colors.text }]}>Filter Posts</Text>
-              <TouchableOpacity onPress={() => setShowFilterModal(false)}>
-                <Ionicons name="close" size={28} color={colors.text} />
+        <View style={styles.filterModalOverlay}>
+          <TouchableOpacity
+            style={styles.filterModalBackdrop}
+            activeOpacity={1}
+            onPress={() => setShowFilterModal(false)}
+          />
+          <View style={[styles.filterModalContent, { backgroundColor: colors.background }]}>
+            {/* Handle Bar */}
+            <View style={styles.handleBar}>
+              <View style={[styles.handle, { backgroundColor: isDark ? "#333" : "#ddd" }]} />
+            </View>
+
+            {/* Header */}
+            <View style={styles.filterHeader}>
+              <Text style={[styles.filterTitle, { color: colors.text }]}>Filters</Text>
+              <TouchableOpacity
+                onPress={() => {
+                  setRadiusKm(10);
+                  setSelectedCategories(["all"]);
+                  setMinCredibility(0.5);
+                  setMaxDaysOld(7);
+                }}
+              >
+                <Text style={[styles.resetText, { color: colors.primary }]}>Reset</Text>
               </TouchableOpacity>
             </View>
-            
-            <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
-              {/* Radius */}
+
+            <ScrollView style={styles.filterBody} showsVerticalScrollIndicator={false}>
+              {/* Distance */}
               <View style={styles.filterSection}>
-                <Text style={[styles.filterLabel, { color: colors.text }]}>
-                  Radius: {radiusKm}km
-                </Text>
-                <View style={styles.optionGrid}>
-                  {radiusOptions.map(radius => (
+                <View style={styles.filterSectionHeader}>
+                  <Ionicons name="location" size={20} color={colors.primary} />
+                  <Text style={[styles.filterSectionTitle, { color: colors.text }]}>Distance</Text>
+                  <Text style={[styles.filterValue, { color: colors.primary }]}>{radiusKm} km</Text>
+                </View>
+                <View style={styles.chipGrid}>
+                  {radiusOptions.map((radius) => (
                     <TouchableOpacity
                       key={radius}
                       style={[
-                        styles.optionChip,
-                        { 
-                          backgroundColor: radiusKm === radius ? colors.primary : colors.background,
-                          borderColor: colors.border
-                        }
+                        styles.chip,
+                        {
+                          backgroundColor: radiusKm === radius ? colors.primary : isDark ? "#1e1e1e" : "#f5f5f5",
+                          borderColor: radiusKm === radius ? colors.primary : "transparent",
+                        },
                       ]}
                       onPress={() => setRadiusKm(radius)}
                     >
-                      <Text style={[
-                        styles.optionText,
-                        { color: radiusKm === radius ? '#fff' : colors.text }
-                      ]}>
-                        {radius}km
+                      <Text
+                        style={[
+                          styles.chipText,
+                          { color: radiusKm === radius ? "#fff" : colors.text },
+                        ]}
+                      >
+                        {radius} km
                       </Text>
                     </TouchableOpacity>
                   ))}
@@ -134,31 +252,35 @@ export default function TopButtons() {
 
               {/* Categories */}
               <View style={styles.filterSection}>
-                <Text style={[styles.filterLabel, { color: colors.text }]}>Categories</Text>
-                <View style={styles.categoryGrid}>
-                  {categories.map(category => {
+                <View style={styles.filterSectionHeader}>
+                  <Ionicons name="grid" size={20} color={colors.primary} />
+                  <Text style={[styles.filterSectionTitle, { color: colors.text }]}>Categories</Text>
+                </View>
+                <View style={styles.categoryChipGrid}>
+                  {categories.map((category) => {
                     const isSelected = selectedCategories.includes(category.id);
                     return (
                       <TouchableOpacity
                         key={category.id}
                         style={[
                           styles.categoryChip,
-                          { 
-                            backgroundColor: isSelected ? colors.primary : colors.background,
-                            borderColor: colors.border
-                          }
+                          {
+                            backgroundColor: isSelected ? colors.primary : isDark ? "#1e1e1e" : "#f5f5f5",
+                          },
                         ]}
                         onPress={() => toggleCategory(category.id)}
                       >
-                        <Ionicons 
-                          name={category.icon} 
-                          size={18} 
-                          color={isSelected ? '#fff' : colors.text} 
+                        <Ionicons
+                          name={category.icon}
+                          size={16}
+                          color={isSelected ? "#fff" : colors.text}
                         />
-                        <Text style={[
-                          styles.categoryText,
-                          { color: isSelected ? '#fff' : colors.text }
-                        ]}>
+                        <Text
+                          style={[
+                            styles.categoryChipText,
+                            { color: isSelected ? "#fff" : colors.text },
+                          ]}
+                        >
                           {category.name}
                         </Text>
                       </TouchableOpacity>
@@ -167,28 +289,33 @@ export default function TopButtons() {
                 </View>
               </View>
 
-              {/* Min Credibility */}
+              {/* Credibility */}
               <View style={styles.filterSection}>
-                <Text style={[styles.filterLabel, { color: colors.text }]}>
-                  Min Credibility: {Math.round(minCredibility * 100)}%
-                </Text>
-                <View style={styles.optionGrid}>
-                  {credibilityOptions.map(cred => (
+                <View style={styles.filterSectionHeader}>
+                  <Ionicons name="shield-checkmark" size={20} color={colors.primary} />
+                  <Text style={[styles.filterSectionTitle, { color: colors.text }]}>Min Credibility</Text>
+                  <Text style={[styles.filterValue, { color: colors.primary }]}>
+                    {Math.round(minCredibility * 100)}%
+                  </Text>
+                </View>
+                <View style={styles.chipGrid}>
+                  {credibilityOptions.map((cred) => (
                     <TouchableOpacity
                       key={cred}
                       style={[
-                        styles.optionChip,
-                        { 
-                          backgroundColor: minCredibility === cred ? colors.primary : colors.background,
-                          borderColor: colors.border
-                        }
+                        styles.chip,
+                        {
+                          backgroundColor: minCredibility === cred ? colors.primary : isDark ? "#1e1e1e" : "#f5f5f5",
+                        },
                       ]}
                       onPress={() => setMinCredibility(cred)}
                     >
-                      <Text style={[
-                        styles.optionText,
-                        { color: minCredibility === cred ? '#fff' : colors.text }
-                      ]}>
+                      <Text
+                        style={[
+                          styles.chipText,
+                          { color: minCredibility === cred ? "#fff" : colors.text },
+                        ]}
+                      >
                         {Math.round(cred * 100)}%
                       </Text>
                     </TouchableOpacity>
@@ -196,28 +323,33 @@ export default function TopButtons() {
                 </View>
               </View>
 
-              {/* Max Days Old */}
+              {/* Time */}
               <View style={styles.filterSection}>
-                <Text style={[styles.filterLabel, { color: colors.text }]}>
-                  Max Age: {maxDaysOld} days
-                </Text>
-                <View style={styles.optionGrid}>
-                  {daysOptions.map(days => (
+                <View style={styles.filterSectionHeader}>
+                  <Ionicons name="time" size={20} color={colors.primary} />
+                  <Text style={[styles.filterSectionTitle, { color: colors.text }]}>Time Range</Text>
+                  <Text style={[styles.filterValue, { color: colors.primary }]}>
+                    {maxDaysOld} {maxDaysOld === 1 ? "day" : "days"}
+                  </Text>
+                </View>
+                <View style={styles.chipGrid}>
+                  {daysOptions.map((days) => (
                     <TouchableOpacity
                       key={days}
                       style={[
-                        styles.optionChip,
-                        { 
-                          backgroundColor: maxDaysOld === days ? colors.primary : colors.background,
-                          borderColor: colors.border
-                        }
+                        styles.chip,
+                        {
+                          backgroundColor: maxDaysOld === days ? colors.primary : isDark ? "#1e1e1e" : "#f5f5f5",
+                        },
                       ]}
                       onPress={() => setMaxDaysOld(days)}
                     >
-                      <Text style={[
-                        styles.optionText,
-                        { color: maxDaysOld === days ? '#fff' : colors.text }
-                      ]}>
+                      <Text
+                        style={[
+                          styles.chipText,
+                          { color: maxDaysOld === days ? "#fff" : colors.text },
+                        ]}
+                      >
                         {days}d
                       </Text>
                     </TouchableOpacity>
@@ -225,16 +357,23 @@ export default function TopButtons() {
                 </View>
               </View>
 
-              <TouchableOpacity 
+              <View style={{ height: 20 }} />
+            </ScrollView>
+
+            {/* Apply Button */}
+            <View style={styles.filterFooter}>
+              <TouchableOpacity
                 style={[styles.applyButton, { backgroundColor: colors.primary }]}
-                onPress={() => {
-                  // TODO: Apply filters to feed
-                  setShowFilterModal(false);
-                }}
+                onPress={() => setShowFilterModal(false)}
               >
                 <Text style={styles.applyButtonText}>Apply Filters</Text>
+                {activeFilters > 0 && (
+                  <View style={styles.applyBadge}>
+                    <Text style={styles.applyBadgeText}>{activeFilters}</Text>
+                  </View>
+                )}
               </TouchableOpacity>
-            </ScrollView>
+            </View>
           </View>
         </View>
       </Modal>
@@ -243,102 +382,273 @@ export default function TopButtons() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 20,
-    marginHorizontal: 15,
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 12,
   },
-  appName: {
-    ...typography.header,
+  logoSection: {
+    flexDirection: "row",
+    alignItems: "center",
   },
-  buttons: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 18,
+  logoIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    justifyContent: "center",
+    alignItems: "center",
+    overflow: "hidden",
   },
-  modalOverlay: {
+  logoText: {
+    flexDirection: "row",
+    marginLeft: 10,
+  },
+  logoVerifi: {
+    fontSize: 22,
+    fontWeight: "300",
+    letterSpacing: -0.5,
+  },
+  logoKar: {
+    fontSize: 22,
+    fontWeight: "800",
+    letterSpacing: -0.5,
+  },
+  actionButtons: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  iconButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  filterBadge: {
+    position: "absolute",
+    top: -4,
+    right: -4,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  filterBadgeText: {
+    color: "#fff",
+    fontSize: 10,
+    fontWeight: "700",
+  },
+
+  // Search Modal
+  searchModalContainer: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'flex-end',
   },
-  modalContent: {
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    maxHeight: '80%',
+  searchHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingTop: 50,
+    paddingBottom: 12,
+    gap: 12,
   },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(128, 128, 128, 0.2)',
+  backButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    justifyContent: "center",
+    alignItems: "center",
   },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-  },
-  modalBody: {
-    padding: 20,
-  },
-  comingSoonText: {
-    fontSize: 16,
-    textAlign: 'center',
-    paddingVertical: 40,
-  },
-  filterSection: {
-    marginBottom: 24,
-  },
-  filterLabel: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 12,
-  },
-  optionGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+  searchInputContainer: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    height: 44,
+    borderRadius: 12,
+    paddingHorizontal: 14,
     gap: 10,
   },
-  optionChip: {
+  searchInput: {
+    flex: 1,
+    fontSize: 16,
+  },
+  searchContent: {
+    flex: 1,
     paddingHorizontal: 16,
+  },
+  searchPlaceholder: {
+    flex: 1,
+    alignItems: "center",
+    paddingTop: 60,
+  },
+  searchIconBig: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 20,
+  },
+  searchPlaceholderTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    marginBottom: 8,
+  },
+  searchPlaceholderText: {
+    fontSize: 15,
+    textAlign: "center",
+    marginBottom: 40,
+  },
+  recentSection: {
+    width: "100%",
+    marginTop: 20,
+  },
+  recentTitle: {
+    fontSize: 12,
+    fontWeight: "600",
+    letterSpacing: 1,
+    marginBottom: 16,
+  },
+  recentItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 14,
+    gap: 14,
+  },
+  recentText: {
+    fontSize: 15,
+  },
+  searchResults: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  searchResultsInfo: {
+    fontSize: 15,
+  },
+
+  // Filter Modal
+  filterModalOverlay: {
+    flex: 1,
+    justifyContent: "flex-end",
+  },
+  filterModalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+  },
+  filterModalContent: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: "85%",
+  },
+  handleBar: {
+    alignItems: "center",
+    paddingTop: 12,
+  },
+  handle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+  },
+  filterHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 8,
+  },
+  filterTitle: {
+    fontSize: 22,
+    fontWeight: "700",
+  },
+  resetText: {
+    fontSize: 15,
+    fontWeight: "600",
+  },
+  filterBody: {
+    paddingHorizontal: 20,
+  },
+  filterSection: {
+    marginTop: 24,
+  },
+  filterSectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 14,
+    gap: 10,
+  },
+  filterSectionTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    flex: 1,
+  },
+  filterValue: {
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  chipGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+  },
+  chip: {
+    paddingHorizontal: 18,
     paddingVertical: 10,
     borderRadius: 20,
-    borderWidth: 1,
   },
-  optionText: {
+  chipText: {
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: "600",
   },
-  categoryGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+  categoryChipGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
     gap: 10,
   },
   categoryChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
+    flexDirection: "row",
+    alignItems: "center",
     paddingHorizontal: 14,
     paddingVertical: 10,
     borderRadius: 20,
-    borderWidth: 1,
+    gap: 6,
   },
-  categoryText: {
+  categoryChipText: {
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: "600",
+  },
+  filterFooter: {
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    paddingBottom: 30,
   },
   applyButton: {
-    paddingVertical: 14,
-    borderRadius: 10,
-    alignItems: 'center',
-    marginTop: 10,
-    marginBottom: 20,
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    paddingVertical: 16,
+    borderRadius: 14,
+    gap: 8,
   },
   applyButtonText: {
-    color: '#fff',
+    color: "#fff",
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: "700",
+  },
+  applyBadge: {
+    backgroundColor: "rgba(255,255,255,0.3)",
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+  applyBadgeText: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "700",
   },
 });

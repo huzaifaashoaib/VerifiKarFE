@@ -119,7 +119,7 @@ function HeaderButtons() {
         </View>
       </Modal>
 
-      {/* Filter Modal */}
+      {/* Filter Modal - Modern Bottom Sheet */}
       <Modal
         animationType="slide"
         visible={filterVisible}
@@ -127,18 +127,38 @@ function HeaderButtons() {
         onRequestClose={() => setFilterVisible(false)}
       >
         <View style={styles.modalOverlay}>
+          <TouchableOpacity 
+            style={styles.modalBackdrop} 
+            activeOpacity={1} 
+            onPress={() => setFilterVisible(false)} 
+          />
           <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
+            {/* Handle Bar */}
+            <View style={styles.handleBar}>
+              <View style={[styles.handle, { backgroundColor: colors.gray + '40' }]} />
+            </View>
+
+            {/* Header */}
             <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: colors.text }]}>Filter Posts</Text>
-              <TouchableOpacity onPress={() => setFilterVisible(false)}>
-                <Ionicons name="close" size={28} color={colors.text} />
+              <Text style={[styles.modalTitle, { color: colors.text }]}>Filters</Text>
+              <TouchableOpacity 
+                onPress={() => {
+                  // Reset filters
+                  setMinCredibility(0);
+                  setMaxDaysOld(30);
+                }}
+              >
+                <Text style={[styles.resetText, { color: colors.primary }]}>Reset</Text>
               </TouchableOpacity>
             </View>
             
             <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
-              {/* Categories */}
+              {/* Report Types Section */}
               <View style={styles.filterSection}>
-                <Text style={[styles.filterLabel, { color: colors.text }]}>Categories</Text>
+                <View style={styles.sectionHeader}>
+                  <Ionicons name="albums-outline" size={18} color={colors.primary} />
+                  <Text style={[styles.filterLabel, { color: colors.text }]}>Report Types</Text>
+                </View>
                 <View style={styles.categoryGrid}>
                   {categories.map(category => {
                     const isSelected = selectedCategories.includes(category.id);
@@ -149,14 +169,15 @@ function HeaderButtons() {
                           styles.categoryChip,
                           { 
                             backgroundColor: isSelected ? colors.primary : colors.background,
-                            borderColor: colors.border
+                            borderColor: isSelected ? colors.primary : colors.border
                           }
                         ]}
                         onPress={() => toggleCategory(category.id)}
+                        activeOpacity={0.7}
                       >
                         <Ionicons 
                           name={category.icon} 
-                          size={18} 
+                          size={16} 
                           color={isSelected ? '#fff' : colors.text} 
                         />
                         <Text style={[
@@ -171,72 +192,79 @@ function HeaderButtons() {
                 </View>
               </View>
 
-              {/* Min Credibility Slider */}
+              {/* Trust Score Section */}
               <View style={styles.filterSection}>
-                <View style={styles.sliderHeader}>
-                  <Text style={[styles.filterLabel, { color: colors.text }]}>
-                    Min Credibility
-                  </Text>
-                  <View style={[styles.sliderValue, { backgroundColor: colors.primary + '20' }]}>
-                    <Text style={[styles.sliderValueText, { color: colors.primary }]}>
-                      {Math.round(minCredibility * 100)}%
+                <View style={styles.sectionHeader}>
+                  <Ionicons name="shield-checkmark" size={18} color={colors.primary} />
+                  <Text style={[styles.filterLabel, { color: colors.text }]}>Trust Score</Text>
+                  <View style={[styles.sliderValueBadge, { backgroundColor: colors.primary }]}>
+                    <Text style={styles.sliderValueBadgeText}>
+                      {Math.round(minCredibility * 100)}%+
                     </Text>
                   </View>
                 </View>
-                <Slider
-                  style={styles.slider}
-                  minimumValue={0}
-                  maximumValue={1}
-                  step={0.05}
-                  value={minCredibility}
-                  onValueChange={setMinCredibility}
-                  minimumTrackTintColor={colors.primary}
-                  maximumTrackTintColor={colors.border}
-                  thumbTintColor={colors.primary}
-                />
-                <View style={styles.sliderLabels}>
-                  <Text style={[styles.sliderLabelText, { color: colors.gray }]}>0%</Text>
-                  <Text style={[styles.sliderLabelText, { color: colors.gray }]}>50%</Text>
-                  <Text style={[styles.sliderLabelText, { color: colors.gray }]}>100%</Text>
+                <View style={[styles.sliderContainer, { backgroundColor: colors.background }]}>
+                  <Slider
+                    style={styles.slider}
+                    minimumValue={0}
+                    maximumValue={1}
+                    step={0.05}
+                    value={minCredibility}
+                    onValueChange={setMinCredibility}
+                    minimumTrackTintColor={colors.primary}
+                    maximumTrackTintColor={colors.border}
+                    thumbTintColor={colors.primary}
+                  />
+                  <View style={styles.sliderLabels}>
+                    <Text style={[styles.sliderLabelText, { color: colors.gray }]}>Any</Text>
+                    <Text style={[styles.sliderLabelText, { color: colors.gray }]}>50%+</Text>
+                    <Text style={[styles.sliderLabelText, { color: colors.gray }]}>100%</Text>
+                  </View>
                 </View>
               </View>
 
-              {/* Max Days Old Slider */}
+              {/* Posted Within Section */}
               <View style={styles.filterSection}>
-                <View style={styles.sliderHeader}>
-                  <Text style={[styles.filterLabel, { color: colors.text }]}>
-                    Max Age
-                  </Text>
-                  <View style={[styles.sliderValue, { backgroundColor: colors.primary + '20' }]}>
-                    <Text style={[styles.sliderValueText, { color: colors.primary }]}>
-                      {maxDaysOld} {maxDaysOld === 1 ? 'day' : 'days'}
+                <View style={styles.sectionHeader}>
+                  <Ionicons name="calendar-outline" size={18} color={colors.primary} />
+                  <Text style={[styles.filterLabel, { color: colors.text }]}>Posted Within</Text>
+                  <View style={[styles.sliderValueBadge, { backgroundColor: colors.primary }]}>
+                    <Text style={styles.sliderValueBadgeText}>
+                      {maxDaysOld === 1 ? 'Today' : `${maxDaysOld} days`}
                     </Text>
                   </View>
                 </View>
-                <Slider
-                  style={styles.slider}
-                  minimumValue={1}
-                  maximumValue={30}
-                  step={1}
-                  value={maxDaysOld}
-                  onValueChange={setMaxDaysOld}
-                  minimumTrackTintColor={colors.primary}
-                  maximumTrackTintColor={colors.border}
-                  thumbTintColor={colors.primary}
-                />
-                <View style={styles.sliderLabels}>
-                  <Text style={[styles.sliderLabelText, { color: colors.gray }]}>1d</Text>
-                  <Text style={[styles.sliderLabelText, { color: colors.gray }]}>15d</Text>
-                  <Text style={[styles.sliderLabelText, { color: colors.gray }]}>30d</Text>
+                <View style={[styles.sliderContainer, { backgroundColor: colors.background }]}>
+                  <Slider
+                    style={styles.slider}
+                    minimumValue={1}
+                    maximumValue={30}
+                    step={1}
+                    value={maxDaysOld}
+                    onValueChange={setMaxDaysOld}
+                    minimumTrackTintColor={colors.primary}
+                    maximumTrackTintColor={colors.border}
+                    thumbTintColor={colors.primary}
+                  />
+                  <View style={styles.sliderLabels}>
+                    <Text style={[styles.sliderLabelText, { color: colors.gray }]}>Today</Text>
+                    <Text style={[styles.sliderLabelText, { color: colors.gray }]}>2 weeks</Text>
+                    <Text style={[styles.sliderLabelText, { color: colors.gray }]}>1 month</Text>
+                  </View>
                 </View>
               </View>
 
+              {/* Apply Button */}
               <TouchableOpacity 
                 style={[styles.applyButton, { backgroundColor: colors.primary }]}
                 onPress={() => setFilterVisible(false)}
+                activeOpacity={0.8}
               >
                 <Text style={styles.applyButtonText}>Apply Filters</Text>
+                <Ionicons name="checkmark" size={20} color="#fff" />
               </TouchableOpacity>
+
+              <View style={{ height: 20 }} />
             </ScrollView>
           </View>
         </View>
@@ -257,6 +285,14 @@ function AuthNavigator() {
 function MainNavigator() {
   const { colors } = useTheme();
 
+  const HeaderTitle = () => (
+    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+      <Ionicons name="shield-checkmark" size={24} color={colors.primary} style={{ marginRight: 8 }} />
+      <Text style={{ fontSize: 20, fontWeight: '600', color: colors.text }}>Verifi</Text>
+      <Text style={{ fontSize: 20, fontWeight: '800', color: colors.primary }}>Kar</Text>
+    </View>
+  );
+
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -273,7 +309,7 @@ function MainNavigator() {
           fontWeight: '600',
           fontSize: 20,
         },
-        headerTitle: 'VerifiKar',
+        headerTitle: () => <HeaderTitle />,
         headerRight: () => <HeaderButtons />,
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.gray,
@@ -330,28 +366,44 @@ export default function App() {
 const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'flex-end',
   },
+  modalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  },
   modalContent: {
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    maxHeight: '80%',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: '85%',
+  },
+  handleBar: {
+    alignItems: 'center',
+    paddingTop: 12,
+    paddingBottom: 4,
+  },
+  handle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
   },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(128, 128, 128, 0.2)',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
   },
   modalTitle: {
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: '700',
   },
+  resetText: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
   modalBody: {
-    padding: 20,
+    paddingHorizontal: 20,
   },
   comingSoonText: {
     fontSize: 16,
@@ -361,10 +413,30 @@ const styles = StyleSheet.create({
   filterSection: {
     marginBottom: 24,
   },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 14,
+  },
   filterLabel: {
     fontSize: 16,
     fontWeight: '600',
-    marginBottom: 12,
+    flex: 1,
+  },
+  sliderContainer: {
+    borderRadius: 14,
+    padding: 16,
+  },
+  sliderValueBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  sliderValueBadgeText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '700',
   },
   sliderHeader: {
     flexDirection: 'row',
@@ -389,9 +461,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     paddingHorizontal: 4,
+    marginTop: 4,
   },
   sliderLabelText: {
-    fontSize: 12,
+    fontSize: 11,
   },
   optionGrid: {
     flexDirection: 'row',
@@ -419,23 +492,25 @@ const styles = StyleSheet.create({
     gap: 6,
     paddingHorizontal: 14,
     paddingVertical: 10,
-    borderRadius: 20,
-    borderWidth: 1,
+    borderRadius: 12,
+    borderWidth: 1.5,
   },
   categoryText: {
     fontSize: 13,
     fontWeight: '600',
   },
   applyButton: {
-    paddingVertical: 14,
-    borderRadius: 10,
+    flexDirection: 'row',
+    justifyContent: 'center',
     alignItems: 'center',
+    gap: 8,
+    paddingVertical: 16,
+    borderRadius: 14,
     marginTop: 10,
-    marginBottom: 20,
   },
   applyButtonText: {
     color: '#fff',
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '700',
   },
 });

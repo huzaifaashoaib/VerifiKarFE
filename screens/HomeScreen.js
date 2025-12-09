@@ -4,7 +4,7 @@ import { useVideoPlayer, VideoView } from 'expo-video';
 import * as VideoThumbnails from 'expo-video-thumbnails';
 import * as Location from 'expo-location';
 import { useEffect, useState, useCallback, useRef, memo } from 'react';
-import { ActivityIndicator, Alert, Animated, Dimensions, FlatList, Image, Modal, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Animated, Dimensions, FlatList, Image, Modal, Pressable, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { API_BASE_URL } from '../config';
 import { useFilters } from '../context/FilterContext';
 import { useTheme } from '../styles/ThemeContext';
@@ -20,11 +20,19 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
  * @returns {Promise<{success: boolean, details: {message: string, new_upvotes: number, new_downvotes: number, new_flags: number}}>}
  */
 async function interactWithPost(postId, interactionType) {
+  // Get all stored keys for debugging
+  const allKeys = await AsyncStorage.getAllKeys();
+  console.log('[InteractWithPost] All AsyncStorage keys:', allKeys);
+  
   let token = await AsyncStorage.getItem('authToken');
   
-  console.log('[InteractWithPost] Raw token:', token);
+  console.log('[InteractWithPost] Raw token value:', token ? `"${token}"` : 'null');
   console.log('[InteractWithPost] Token type:', typeof token);
   console.log('[InteractWithPost] Token length:', token ? token.length : 0);
+  
+  // Also check for alternate key names (in case of inconsistency)
+  const altToken = await AsyncStorage.getItem('token');
+  console.log('[InteractWithPost] Alt token (key: "token"):', altToken ? 'exists' : 'null');
   
   // Clean up token (remove any whitespace/newlines)
   if (token) {
@@ -32,7 +40,8 @@ async function interactWithPost(postId, interactionType) {
   }
   
   if (!token) {
-    throw new Error('Please log in to interact with posts');
+    console.log('[InteractWithPost] ERROR: No token found in AsyncStorage!');
+    throw new Error('Authentication required. Please log in again.');
   }
 
   const headers = {
@@ -41,7 +50,7 @@ async function interactWithPost(postId, interactionType) {
   };
   
   console.log(`[InteractWithPost] POST ${API_BASE_URL}/posts/${postId}/interact`);
-  console.log('[InteractWithPost] Headers:', JSON.stringify(headers, null, 2));
+  console.log('[InteractWithPost] Auth header:', `Bearer ${token.substring(0, 20)}...`);
 
   const response = await fetch(`${API_BASE_URL}/posts/${postId}/interact`, {
     method: 'POST',
@@ -50,12 +59,17 @@ async function interactWithPost(postId, interactionType) {
   });
 
   const data = await response.json().catch(() => null);
-  console.log('[InteractWithPost] Response:', response.status, data);
+  console.log('[InteractWithPost] Response status:', response.status);
+  console.log('[InteractWithPost] Response data:', JSON.stringify(data, null, 2));
 
   if (!response.ok) {
     // Handle structured error responses from backend
     let errorMessage = `Failed to ${interactionType} post`;
-    if (data?.detail) {
+    
+    // Check for expired token (401 Unauthorized)
+    if (response.status === 401) {
+      errorMessage = 'Your session has expired. Please log out and log back in.';
+    } else if (data?.detail) {
       if (typeof data.detail === 'string') {
         errorMessage = data.detail;
       } else if (data.detail?.details?.message) {
@@ -72,6 +86,7 @@ async function interactWithPost(postId, interactionType) {
 
 /**
  * Reddit-style voting component with optimistic updates
+ * Allows rapid interactions without blocking UI
  */
 const PostInteractions = memo(({ 
   postId, 
@@ -90,7 +105,10 @@ const PostInteractions = memo(({
   const [upvotes, setUpvotes] = useState(initialUpvotes);
   const [downvotes, setDownvotes] = useState(initialDownvotes);
   const [flags, setFlags] = useState(initialFlags);
-  const [isLoading, setIsLoading] = useState(false);
+
+  // Request tracking to handle stale responses
+  const requestIdRef = useRef(0);
+  const pendingRequestRef = useRef(null);
 
   // Animation for button press feedback
   const upvoteScale = useRef(new Animated.Value(1)).current;
@@ -113,9 +131,10 @@ const PostInteractions = memo(({
   };
 
   const handleUpvote = async () => {
-    if (isLoading) return;
-    
     animatePress(upvoteScale);
+    
+    // Increment request ID to track this specific request
+    const currentRequestId = ++requestIdRef.current;
     
     // Store previous state for rollback
     const prevUpvoted = isUpvoted;
@@ -123,48 +142,48 @@ const PostInteractions = memo(({
     const prevUpvotes = upvotes;
     const prevDownvotes = downvotes;
 
-    // Optimistic update
+    // Optimistic update - toggle behavior
     if (isUpvoted) {
-      // Toggle off
+      // Already upvoted, remove upvote
       setIsUpvoted(false);
-      setUpvotes(prev => prev - 1);
+      setUpvotes(prev => Math.max(0, prev - 1));
     } else {
-      // Toggle on
+      // Add upvote
       setIsUpvoted(true);
       setUpvotes(prev => prev + 1);
+      // If was downvoted, remove downvote
       if (isDownvoted) {
-        // Switch from downvote to upvote
         setIsDownvoted(false);
-        setDownvotes(prev => prev - 1);
+        setDownvotes(prev => Math.max(0, prev - 1));
       }
     }
 
     try {
-      setIsLoading(true);
       const response = await interactWithPost(postId, 'upvote');
       
-      if (response.success) {
-        // Sync with server response
+      // Only apply server response if this is still the latest request
+      if (currentRequestId === requestIdRef.current && response.success) {
         setUpvotes(response.details.new_upvotes);
         setDownvotes(response.details.new_downvotes);
         setFlags(response.details.new_flags);
       }
     } catch (error) {
-      // Rollback on error
-      setIsUpvoted(prevUpvoted);
-      setIsDownvoted(prevDownvoted);
-      setUpvotes(prevUpvotes);
-      setDownvotes(prevDownvotes);
-      onInteractionError?.(error.message);
-    } finally {
-      setIsLoading(false);
+      // Only rollback if this is still the latest request
+      if (currentRequestId === requestIdRef.current) {
+        setIsUpvoted(prevUpvoted);
+        setIsDownvoted(prevDownvoted);
+        setUpvotes(prevUpvotes);
+        setDownvotes(prevDownvotes);
+        onInteractionError?.(error.message);
+      }
     }
   };
 
   const handleDownvote = async () => {
-    if (isLoading) return;
-    
     animatePress(downvoteScale);
+    
+    // Increment request ID to track this specific request
+    const currentRequestId = ++requestIdRef.current;
     
     // Store previous state for rollback
     const prevUpvoted = isUpvoted;
@@ -172,48 +191,48 @@ const PostInteractions = memo(({
     const prevUpvotes = upvotes;
     const prevDownvotes = downvotes;
 
-    // Optimistic update
+    // Optimistic update - toggle behavior
     if (isDownvoted) {
-      // Toggle off
+      // Already downvoted, remove downvote
       setIsDownvoted(false);
-      setDownvotes(prev => prev - 1);
+      setDownvotes(prev => Math.max(0, prev - 1));
     } else {
-      // Toggle on
+      // Add downvote
       setIsDownvoted(true);
       setDownvotes(prev => prev + 1);
+      // If was upvoted, remove upvote
       if (isUpvoted) {
-        // Switch from upvote to downvote
         setIsUpvoted(false);
-        setUpvotes(prev => prev - 1);
+        setUpvotes(prev => Math.max(0, prev - 1));
       }
     }
 
     try {
-      setIsLoading(true);
       const response = await interactWithPost(postId, 'downvote');
       
-      if (response.success) {
-        // Sync with server response
+      // Only apply server response if this is still the latest request
+      if (currentRequestId === requestIdRef.current && response.success) {
         setUpvotes(response.details.new_upvotes);
         setDownvotes(response.details.new_downvotes);
         setFlags(response.details.new_flags);
       }
     } catch (error) {
-      // Rollback on error
-      setIsUpvoted(prevUpvoted);
-      setIsDownvoted(prevDownvoted);
-      setUpvotes(prevUpvotes);
-      setDownvotes(prevDownvotes);
-      onInteractionError?.(error.message);
-    } finally {
-      setIsLoading(false);
+      // Only rollback if this is still the latest request
+      if (currentRequestId === requestIdRef.current) {
+        setIsUpvoted(prevUpvoted);
+        setIsDownvoted(prevDownvoted);
+        setUpvotes(prevUpvotes);
+        setDownvotes(prevDownvotes);
+        onInteractionError?.(error.message);
+      }
     }
   };
 
   const handleFlag = async () => {
-    if (isLoading) return;
-    
     animatePress(flagScale);
+    
+    // Increment request ID to track this specific request
+    const currentRequestId = ++requestIdRef.current;
     
     // Store previous state for rollback
     const prevFlagged = isFlagged;
@@ -222,196 +241,152 @@ const PostInteractions = memo(({
     // Optimistic update (flag is independent of votes)
     if (isFlagged) {
       setIsFlagged(false);
-      setFlags(prev => prev - 1);
+      setFlags(prev => Math.max(0, prev - 1));
     } else {
       setIsFlagged(true);
       setFlags(prev => prev + 1);
     }
 
     try {
-      setIsLoading(true);
       const response = await interactWithPost(postId, 'flag');
       
-      if (response.success) {
-        // Sync with server response
+      // Only apply server response if this is still the latest request
+      if (currentRequestId === requestIdRef.current && response.success) {
         setUpvotes(response.details.new_upvotes);
         setDownvotes(response.details.new_downvotes);
         setFlags(response.details.new_flags);
       }
     } catch (error) {
-      // Rollback on error
-      setIsFlagged(prevFlagged);
-      setFlags(prevFlags);
-      onInteractionError?.(error.message);
-    } finally {
-      setIsLoading(false);
+      // Only rollback if this is still the latest request
+      if (currentRequestId === requestIdRef.current) {
+        setIsFlagged(prevFlagged);
+        setFlags(prevFlags);
+        onInteractionError?.(error.message);
+      }
     }
   };
 
   // Colors for active states
-  const upvoteColor = isUpvoted ? '#FF6B35' : colors.gray; // Orange when active
-  const downvoteColor = isDownvoted ? '#3B82F6' : colors.gray; // Blue when active
+  const upvoteColor = isUpvoted ? '#00BA7C' : colors.gray; // Green when active
+  const downvoteColor = isDownvoted ? '#F91880' : colors.gray; // Pink when active
   const flagColor = isFlagged ? '#EF4444' : colors.gray; // Red when active
 
+  // Format count like Twitter (1K, 1M, etc.)
+  const formatCount = (count) => {
+    if (count >= 1000000) return `${(count / 1000000).toFixed(1)}M`;
+    if (count >= 1000) return `${(count / 1000).toFixed(1)}K`;
+    return count > 0 ? count.toString() : '';
+  };
+
   return (
-    <View style={styles.postFooter}>
-      <View style={styles.votingContainer}>
-        {/* Upvote Button */}
-        <Animated.View style={{ transform: [{ scale: upvoteScale }] }}>
-          <TouchableOpacity 
-            style={styles.voteButton} 
-            onPress={handleUpvote}
-            disabled={isLoading}
-            activeOpacity={0.7}
-          >
-            <Ionicons 
-              name={isUpvoted ? "arrow-up-circle" : "arrow-up-circle-outline"} 
-              size={24} 
-              color={upvoteColor} 
-            />
-            <Text style={[styles.voteText, { color: isUpvoted ? upvoteColor : colors.text }]}>
-              {upvotes}
-            </Text>
-          </TouchableOpacity>
-        </Animated.View>
-        
-        {/* Downvote Button */}
-        <Animated.View style={{ transform: [{ scale: downvoteScale }] }}>
-          <TouchableOpacity 
-            style={styles.voteButton} 
-            onPress={handleDownvote}
-            disabled={isLoading}
-            activeOpacity={0.7}
-          >
-            <Ionicons 
-              name={isDownvoted ? "arrow-down-circle" : "arrow-down-circle-outline"} 
-              size={24} 
-              color={downvoteColor} 
-            />
-            <Text style={[styles.voteText, { color: isDownvoted ? downvoteColor : colors.text }]}>
-              {downvotes}
-            </Text>
-          </TouchableOpacity>
-        </Animated.View>
-
-        {/* Comment Button */}
-        <TouchableOpacity style={styles.commentButton}>
-          <Ionicons name="chatbubble-outline" size={22} color={colors.text} />
+    <View style={twitterStyles.actionBar}>
+      {/* Upvote Button */}
+      <Animated.View style={{ transform: [{ scale: upvoteScale }] }}>
+        <TouchableOpacity 
+          style={twitterStyles.actionButton} 
+          onPress={handleUpvote}
+          activeOpacity={0.6}
+        >
+          <Ionicons 
+            name={isUpvoted ? "arrow-up-circle" : "arrow-up-circle-outline"} 
+            size={20} 
+            color={upvoteColor} 
+          />
+          <Text style={[twitterStyles.actionCount, { color: upvoteColor }]}>
+            {formatCount(upvotes)}
+          </Text>
         </TouchableOpacity>
+      </Animated.View>
 
-        {/* Flag Button */}
-        <Animated.View style={{ transform: [{ scale: flagScale }] }}>
-          <TouchableOpacity 
-            style={styles.flagButton} 
-            onPress={handleFlag}
-            disabled={isLoading}
-            activeOpacity={0.7}
-          >
-            <Ionicons 
-              name={isFlagged ? "flag" : "flag-outline"} 
-              size={20} 
-              color={flagColor} 
-            />
-          </TouchableOpacity>
-        </Animated.View>
-      </View>
+      {/* Downvote Button */}
+      <Animated.View style={{ transform: [{ scale: downvoteScale }] }}>
+        <TouchableOpacity 
+          style={twitterStyles.actionButton} 
+          onPress={handleDownvote}
+          activeOpacity={0.6}
+        >
+          <Ionicons 
+            name={isDownvoted ? "arrow-down-circle" : "arrow-down-circle-outline"} 
+            size={20} 
+            color={downvoteColor} 
+          />
+          <Text style={[twitterStyles.actionCount, { color: downvoteColor }]}>
+            {formatCount(downvotes)}
+          </Text>
+        </TouchableOpacity>
+      </Animated.View>
+
+      {/* Comment Button */}
+      <TouchableOpacity style={twitterStyles.actionButton}>
+        <Ionicons name="chatbubble-outline" size={18} color={colors.gray} />
+      </TouchableOpacity>
+
+      {/* Flag Button */}
+      <Animated.View style={{ transform: [{ scale: flagScale }] }}>
+        <TouchableOpacity 
+          style={twitterStyles.actionButton} 
+          onPress={handleFlag}
+          activeOpacity={0.6}
+        >
+          <Ionicons 
+            name={isFlagged ? "flag" : "flag-outline"} 
+            size={18} 
+            color={flagColor} 
+          />
+        </TouchableOpacity>
+      </Animated.View>
     </View>
   );
 });
 
 // ============ SKELETON COMPONENTS ============
 
-// Skeleton shimmer component
-const SkeletonPlaceholder = ({ width, height, style, colors }) => {
-  const shimmerAnim = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    const animation = Animated.loop(
-      Animated.sequence([
-        Animated.timing(shimmerAnim, {
-          toValue: 1,
-          duration: 1000,
-          useNativeDriver: true,
-        }),
-        Animated.timing(shimmerAnim, {
-          toValue: 0,
-          duration: 1000,
-          useNativeDriver: true,
-        }),
-      ])
-    );
-    animation.start();
-    return () => animation.stop();
-  }, []);
-
-  const opacity = shimmerAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0.3, 0.7],
-  });
-
-  return (
-    <Animated.View
-      style={[
-        {
-          width,
-          height,
-          backgroundColor: colors.border,
-          borderRadius: 8,
-          opacity,
-        },
-        style,
-      ]}
-    />
-  );
-};
-
-// Skeleton card component
-const SkeletonCard = ({ colors }) => (
-  <View style={[styles.postCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-    {/* Header skeleton */}
-    <View style={styles.topRow}>
-      <View style={styles.locationHeader}>
-        <SkeletonPlaceholder width={16} height={16} colors={colors} style={{ borderRadius: 8 }} />
-        <SkeletonPlaceholder width={120} height={14} colors={colors} />
-        <SkeletonPlaceholder width={40} height={14} colors={colors} />
-      </View>
-      <SkeletonPlaceholder width={70} height={24} colors={colors} style={{ borderRadius: 12 }} />
-    </View>
-
-    {/* Credibility bar skeleton */}
-    <View style={{ marginBottom: 12 }}>
-      <SkeletonPlaceholder width="100%" height={6} colors={colors} style={{ marginBottom: 6 }} />
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-        <SkeletonPlaceholder width={14} height={14} colors={colors} style={{ borderRadius: 7 }} />
-        <SkeletonPlaceholder width={80} height={12} colors={colors} />
-        <View style={{ flex: 1 }} />
-        <SkeletonPlaceholder width={50} height={12} colors={colors} />
-      </View>
-    </View>
-
-    {/* Content skeleton */}
-    <SkeletonPlaceholder width="100%" height={14} colors={colors} style={{ marginBottom: 8 }} />
-    <SkeletonPlaceholder width="90%" height={14} colors={colors} style={{ marginBottom: 8 }} />
-    <SkeletonPlaceholder width="75%" height={14} colors={colors} style={{ marginBottom: 12 }} />
-
-    {/* Media skeleton */}
-    <SkeletonPlaceholder width="100%" height={200} colors={colors} style={{ marginBottom: 12 }} />
-
-    {/* Footer skeleton */}
-    <View style={[styles.postFooter, { borderTopColor: colors.border }]}>
-      <View style={styles.votingContainer}>
-        <SkeletonPlaceholder width={50} height={24} colors={colors} style={{ borderRadius: 12 }} />
-        <SkeletonPlaceholder width={50} height={24} colors={colors} style={{ borderRadius: 12 }} />
-        <SkeletonPlaceholder width={80} height={24} colors={colors} style={{ borderRadius: 12 }} />
+// Twitter-style skeleton for feed items
+const TwitterSkeleton = memo(({ colors }) => (
+  <View style={[twitterStyles.post, { borderBottomColor: colors.border }]}>
+    <View style={twitterStyles.postContent}>
+      {/* Avatar skeleton */}
+      <View style={[twitterStyles.avatarSkeleton, { backgroundColor: colors.border }]} />
+      
+      {/* Content skeleton */}
+      <View style={twitterStyles.postBody}>
+        {/* Header skeleton */}
+        <View style={twitterStyles.skeletonHeader}>
+          <View style={[twitterStyles.skeletonName, { backgroundColor: colors.border }]} />
+          <View style={[twitterStyles.skeletonHandle, { backgroundColor: colors.border }]} />
+        </View>
+        
+        {/* Text skeleton */}
+        <View style={[twitterStyles.skeletonText, { backgroundColor: colors.border, width: '100%' }]} />
+        <View style={[twitterStyles.skeletonText, { backgroundColor: colors.border, width: '90%' }]} />
+        <View style={[twitterStyles.skeletonText, { backgroundColor: colors.border, width: '75%' }]} />
+        
+        {/* Media skeleton */}
+        <View style={[twitterStyles.skeletonMedia, { backgroundColor: colors.border }]} />
+        
+        {/* Actions skeleton */}
+        <View style={twitterStyles.skeletonActions}>
+          <View style={[twitterStyles.skeletonAction, { backgroundColor: colors.border }]} />
+          <View style={[twitterStyles.skeletonAction, { backgroundColor: colors.border }]} />
+          <View style={[twitterStyles.skeletonAction, { backgroundColor: colors.border }]} />
+          <View style={[twitterStyles.skeletonAction, { backgroundColor: colors.border }]} />
+        </View>
       </View>
     </View>
   </View>
-);
+));
+
+// Skeleton card component (kept for backwards compatibility)
+const SkeletonCard = ({ colors }) => <TwitterSkeleton colors={colors} />;
 
 // Fast image component - minimal state, maximum performance
-const SmartImage = memo(({ uri, style, colors }) => {
+const SmartImage = memo(({ uri, style, colors, onPress }) => {
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState(false);
+
+  // Memoize callbacks to prevent re-renders
+  const handleLoad = useCallback(() => setLoaded(true), []);
+  const handleError = useCallback(() => setError(true), []);
 
   if (error) {
     return (
@@ -422,16 +397,25 @@ const SmartImage = memo(({ uri, style, colors }) => {
   }
 
   return (
-    <View style={[style, { backgroundColor: colors.border }]}>
+    <Pressable 
+      onPress={onPress} 
+      disabled={!onPress}
+      style={[style, { backgroundColor: colors.border }]}
+    >
       <Image
-        source={{ uri }}
-        style={[style, { opacity: loaded ? 1 : 0 }]}
+        source={{ uri, cache: 'force-cache' }}
+        style={[StyleSheet.absoluteFill, { opacity: loaded ? 1 : 0 }]}
         resizeMode="cover"
-        onLoad={() => setLoaded(true)}
-        onError={() => setError(true)}
+        onLoad={handleLoad}
+        onError={handleError}
+        fadeDuration={0}
       />
-    </View>
+    </Pressable>
   );
+}, (prevProps, nextProps) => {
+  // Custom comparison - only re-render if uri or colors change
+  return prevProps.uri === nextProps.uri && 
+         prevProps.colors.border === nextProps.colors.border;
 });
 
 // Video thumbnail component - tries to show first frame from video URL
@@ -571,21 +555,67 @@ const VideoPlayerModal = ({ visible, uri, onClose, colors }) => {
     }
   }, [visible, uri]);
 
-  // Listen to player status
+  // Listen to player status changes
   useEffect(() => {
     if (!player) return;
     
-    const subscription = player.addListener('statusChange', (status) => {
-      if (status === 'readyToPlay') {
+    const subscriptions = [];
+    
+    // Listen for status changes
+    const statusSub = player.addListener('statusChange', (newStatus) => {
+      console.log('Video status:', newStatus);
+      // expo-video uses 'readyToPlay', 'loading', 'idle', 'error'
+      if (newStatus === 'readyToPlay') {
         setIsLoading(false);
-      } else if (status === 'error') {
+        setError(false);
+      } else if (newStatus === 'error') {
         setError(true);
+        setIsLoading(false);
+      } else if (newStatus === 'loading') {
+        setIsLoading(true);
+      }
+    });
+    subscriptions.push(statusSub);
+    
+    // Also listen for when video starts playing as backup
+    const playingSub = player.addListener('playingChange', (isPlaying) => {
+      console.log('Video playing:', isPlaying);
+      if (isPlaying) {
         setIsLoading(false);
       }
     });
+    subscriptions.push(playingSub);
 
-    return () => subscription?.remove();
+    // Check initial status
+    if (player.status === 'readyToPlay') {
+      setIsLoading(false);
+    }
+
+    // Fallback timeout - hide loading after 5 seconds regardless
+    // This handles cases where events don't fire properly
+    const timeout = setTimeout(() => {
+      setIsLoading(false);
+    }, 5000);
+
+    return () => {
+      subscriptions.forEach(sub => sub?.remove());
+      clearTimeout(timeout);
+    };
   }, [player]);
+
+  // Additional effect to check player.playing state periodically
+  useEffect(() => {
+    if (!player || !visible) return;
+    
+    const interval = setInterval(() => {
+      if (player.playing || player.status === 'readyToPlay') {
+        setIsLoading(false);
+        clearInterval(interval);
+      }
+    }, 500);
+
+    return () => clearInterval(interval);
+  }, [player, visible]);
 
   if (!visible) return null;
 
@@ -632,6 +662,141 @@ const VideoPlayerModal = ({ visible, uri, onClose, colors }) => {
   );
 };
 
+// Image Viewer Modal Component with swipeable gallery
+const ImageViewerModal = ({ visible, images, initialIndex, onClose }) => {
+  const [currentIndex, setCurrentIndex] = useState(initialIndex || 0);
+  const [loadingStates, setLoadingStates] = useState({});
+  const [errorStates, setErrorStates] = useState({});
+  const flatListRef = useRef(null);
+
+  useEffect(() => {
+    if (visible) {
+      setCurrentIndex(initialIndex || 0);
+      setLoadingStates({});
+      setErrorStates({});
+      // Scroll to initial index when modal opens
+      setTimeout(() => {
+        flatListRef.current?.scrollToIndex({ index: initialIndex || 0, animated: false });
+      }, 100);
+    }
+  }, [visible, initialIndex]);
+
+  const handleImageLoad = useCallback((index) => {
+    setLoadingStates(prev => ({ ...prev, [index]: false }));
+  }, []);
+
+  const handleImageError = useCallback((index) => {
+    setErrorStates(prev => ({ ...prev, [index]: true }));
+    setLoadingStates(prev => ({ ...prev, [index]: false }));
+  }, []);
+
+  const onViewableItemsChanged = useRef(({ viewableItems }) => {
+    if (viewableItems.length > 0) {
+      setCurrentIndex(viewableItems[0].index);
+    }
+  }).current;
+
+  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 50 }).current;
+
+  if (!visible || !images || images.length === 0) return null;
+
+  const renderImageItem = ({ item: uri, index }) => {
+    const isLoading = loadingStates[index] !== false;
+    const hasError = errorStates[index];
+
+    return (
+      <View style={styles.imageSlide}>
+        {hasError ? (
+          <View style={styles.videoErrorContainer}>
+            <Ionicons name="image-outline" size={64} color="#fff" />
+            <Text style={styles.videoErrorText}>Failed to load image</Text>
+          </View>
+        ) : (
+          <>
+            <Image
+              source={{ uri, cache: 'force-cache' }}
+              style={styles.fullscreenImage}
+              resizeMode="contain"
+              onLoad={() => handleImageLoad(index)}
+              onError={() => handleImageError(index)}
+            />
+            {isLoading && (
+              <View style={styles.videoLoadingOverlay}>
+                <ActivityIndicator size="large" color="#fff" />
+                <Text style={{ color: '#fff', marginTop: 12 }}>Loading image...</Text>
+              </View>
+            )}
+          </>
+        )}
+      </View>
+    );
+  };
+
+  return (
+    <Modal
+      visible={visible}
+      transparent={true}
+      animationType="fade"
+      onRequestClose={onClose}
+    >
+      <View style={styles.videoModalContainer}>
+        {/* Close button */}
+        <TouchableOpacity style={styles.videoCloseButton} onPress={onClose}>
+          <Ionicons name="close" size={28} color="#fff" />
+        </TouchableOpacity>
+
+        {/* Image counter */}
+        {images.length > 1 && (
+          <View style={styles.imageCounter}>
+            <Text style={styles.imageCounterText}>
+              {currentIndex + 1} / {images.length}
+            </Text>
+          </View>
+        )}
+
+        {/* Swipeable image gallery */}
+        <FlatList
+          ref={flatListRef}
+          data={images}
+          renderItem={renderImageItem}
+          keyExtractor={(item, index) => `image-${index}`}
+          horizontal
+          pagingEnabled
+          showsHorizontalScrollIndicator={false}
+          onViewableItemsChanged={onViewableItemsChanged}
+          viewabilityConfig={viewabilityConfig}
+          getItemLayout={(data, index) => ({
+            length: SCREEN_WIDTH,
+            offset: SCREEN_WIDTH * index,
+            index,
+          })}
+          initialScrollIndex={initialIndex || 0}
+          onScrollToIndexFailed={(info) => {
+            setTimeout(() => {
+              flatListRef.current?.scrollToIndex({ index: info.index, animated: false });
+            }, 100);
+          }}
+        />
+
+        {/* Pagination dots */}
+        {images.length > 1 && (
+          <View style={styles.paginationDots}>
+            {images.map((_, index) => (
+              <View
+                key={index}
+                style={[
+                  styles.paginationDot,
+                  currentIndex === index && styles.paginationDotActive
+                ]}
+              />
+            ))}
+          </View>
+        )}
+      </View>
+    </Modal>
+  );
+};
+
 export default function HomeScreen() {
   const { colors, isDark } = useTheme();
   const { selectedCategories, minCredibility, maxDaysOld, getActiveCategory } = useFilters();
@@ -652,10 +817,40 @@ export default function HomeScreen() {
   const [videoModalVisible, setVideoModalVisible] = useState(false);
   const [currentVideoUri, setCurrentVideoUri] = useState(null);
 
+  // Image viewer state
+  const [imageModalVisible, setImageModalVisible] = useState(false);
+  const [currentImages, setCurrentImages] = useState([]);
+  const [currentImageIndex, setCurrentImageIndex] = useState(0);
+
+  // Credibility tooltip state
+  const [credibilityModal, setCredibilityModal] = useState({ visible: false, score: 0 });
+
+  // Location tooltip state
+  const [locationModal, setLocationModal] = useState({ visible: false, name: '', lat: 0, lon: 0, distance: null });
+
+  // Function to show credibility info
+  const showCredibilityInfo = useCallback((score) => {
+    setCredibilityModal({ visible: true, score });
+  }, []);
+
+  // Function to show location info
+  const showLocationInfo = useCallback((name, lat, lon, distance) => {
+    setLocationModal({ visible: true, name, lat, lon, distance });
+  }, []);
+
   // Function to play video
   const playVideo = useCallback((uri) => {
     setCurrentVideoUri(uri);
     setVideoModalVisible(true);
+  }, []);
+
+  // Function to view image fullscreen (supports multiple images)
+  const viewImage = useCallback((images, startIndex = 0) => {
+    // Handle both single image string and array of images
+    const imageArray = Array.isArray(images) ? images : [images];
+    setCurrentImages(imageArray);
+    setCurrentImageIndex(startIndex);
+    setImageModalVisible(true);
   }, []);
 
   // Reverse geocode coordinates to get location name
@@ -733,8 +928,10 @@ export default function HomeScreen() {
             longitude: location.coords.longitude
           });
           setIsUsingRealLocation(true);
-          setLocationName('Your Location');
-          console.log('Using real location:', location.coords);
+          // Get actual location name via reverse geocoding
+          const actualLocationName = await getLocationName(location.coords.latitude, location.coords.longitude);
+          setLocationName(actualLocationName);
+          console.log('Using real location:', location.coords, actualLocationName);
         } catch (locError) {
           console.error('Error getting location:', locError);
           // Try to get last known location as fallback
@@ -748,8 +945,10 @@ export default function HomeScreen() {
                 longitude: lastKnown.coords.longitude
               });
               setIsUsingRealLocation(true);
-              setLocationName('Last Known Location');
-              console.log('Using last known location');
+              // Get actual location name via reverse geocoding
+              const lastKnownName = await getLocationName(lastKnown.coords.latitude, lastKnown.coords.longitude);
+              setLocationName(lastKnownName);
+              console.log('Using last known location:', lastKnownName);
             } else {
               // Use a default location (Karachi, Pakistan) if all fails
               setUserLocation({
@@ -828,8 +1027,10 @@ export default function HomeScreen() {
           longitude: location.coords.longitude
         });
         setIsUsingRealLocation(true);
-        setLocationName('Your Location');
-        console.log('Location refreshed:', location.coords);
+        // Get actual location name via reverse geocoding
+        const refreshedLocationName = await getLocationName(location.coords.latitude, location.coords.longitude);
+        setLocationName(refreshedLocationName);
+        console.log('Location refreshed:', location.coords, refreshedLocationName);
       } else {
         Alert.alert(
           'Location Permission Required',
@@ -950,15 +1151,56 @@ export default function HomeScreen() {
 
   const loadFeed = async () => {
     try {
-      setIsLoading(true);
       setError(null);
+      
+      // STALE-WHILE-REVALIDATE: Load cached data first for instant display
+      if (posts.length === 0) {
+        try {
+          const cachedData = await AsyncStorage.getItem('@verifikar_feed_cache');
+          if (cachedData) {
+            const { posts: cachedPosts, timestamp } = JSON.parse(cachedData);
+            // Use cache if it's less than 30 minutes old
+            const cacheAge = Date.now() - timestamp;
+            if (cacheAge < 30 * 60 * 1000 && cachedPosts.length > 0) {
+              setPosts(cachedPosts);
+              // Don't show loading spinner when we have cached data
+              setIsLoading(false);
+            } else {
+              setIsLoading(true);
+            }
+          } else {
+            setIsLoading(true);
+          }
+        } catch (cacheError) {
+          console.log('Cache read error:', cacheError);
+          setIsLoading(true);
+        }
+      } else {
+        setIsLoading(true);
+      }
+      
+      // Fetch fresh data in background
       const feedData = await fetchFeed();
       setPosts(feedData);
+      
+      // Cache the fresh data
+      try {
+        await AsyncStorage.setItem('@verifikar_feed_cache', JSON.stringify({
+          posts: feedData,
+          timestamp: Date.now()
+        }));
+      } catch (cacheError) {
+        console.log('Cache write error:', cacheError);
+      }
+      
       // Start background geocoding after posts are set
       setTimeout(() => batchGeocodeLocations(feedData), 100);
     } catch (error) {
       console.error('Error loading feed:', error);
-      setError(error.message || 'Failed to load feed');
+      // Only show error if we have no cached data
+      if (posts.length === 0) {
+        setError(error.message || 'Failed to load feed');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -988,6 +1230,16 @@ export default function HomeScreen() {
       
       const feedData = await fetchFeed();
       setPosts(feedData);
+      
+      // Update cache on refresh
+      try {
+        await AsyncStorage.setItem('@verifikar_feed_cache', JSON.stringify({
+          posts: feedData,
+          timestamp: Date.now()
+        }));
+      } catch (cacheError) {
+        console.log('Cache write error:', cacheError);
+      }
     } catch (error) {
       console.error('Error refreshing feed:', error);
       setError(error.message || 'Failed to refresh feed');
@@ -1017,9 +1269,39 @@ export default function HomeScreen() {
       Social: '#2ECC71',
       Emergency: '#E67E22',
       Weather: '#9B59B6',
+      Fire: '#FF4500',
+      Protest: '#FFD700',
+      Traffic: '#FF8C00',
+      Health: '#00CED1',
+      Disaster: '#8B0000',
+      'Natural Disaster': '#8B0000',
+      Flood: '#1E90FF',
+      Earthquake: '#8B4513',
       default: colors.primary
     };
     return categoryColors[category] || categoryColors.default;
+  };
+
+  // Get icon for each category - helps users who can't read
+  const getCategoryIcon = (category) => {
+    const categoryIcons = {
+      Accident: 'car',                  // 🚗 Car accident
+      Crime: 'alert-circle',            // ⚠️ Crime/danger
+      Infrastructure: 'construct',       // 🚧 Construction/infrastructure
+      Social: 'people',                  // 👥 Social gathering
+      Emergency: 'warning',              // ⚡ Emergency
+      Weather: 'thunderstorm',           // 🌩️ Weather
+      Fire: 'flame',                     // 🔥 Fire
+      Protest: 'megaphone',              // 📢 Protest
+      Traffic: 'car-sport',              // 🚗 Traffic
+      Health: 'medkit',                  // 🏥 Health/medical
+      Disaster: 'alert-outline',          // ⚠️ Disaster
+      'Natural Disaster': 'earth',       // 🌍 Natural disaster
+      Flood: 'water',                    // 💧 Flood
+      Earthquake: 'pulse',               // 📈 Earthquake
+      default: 'alert-circle'            // ⚠️ Default alert
+    };
+    return categoryIcons[category] || categoryIcons.default;
   };
 
   const getCredibilityColor = (score) => {
@@ -1050,241 +1332,213 @@ export default function HomeScreen() {
       );
     }
 
-    // Get location name from cache or use coordinates (no async calls during render)
+    // Get location name from cache or use coordinates
     const cacheKey = `${item.location_lat.toFixed(4)},${item.location_lon.toFixed(4)}`;
     const incidentLocation = locationCache[cacheKey] || `${item.location_lat.toFixed(2)}°, ${item.location_lon.toFixed(2)}°`;
 
-    return (
-      <View style={[styles.postCard, { 
-        backgroundColor: colors.surface,
-        borderColor: colors.border 
-      }]}>
-        {/* Location and Category Header */}
-        <View style={styles.topRow}>
-          <View style={styles.locationHeader}>
-            <Ionicons name="location" size={14} color={colors.primary} />
-            <Text style={[styles.locationText, { color: colors.text }]} numberOfLines={1}>
-              {incidentLocation}
-            </Text>
-            {distance && (
-              <Text style={[styles.distanceText, { color: colors.gray }]}>
-                • {distance < 1 ? `${Math.round(distance * 1000)}m` : `${distance.toFixed(1)}km`}
-              </Text>
-            )}
+    // Helper functions for media
+    const getMediaInfo = (media) => {
+      const mediaUrl = typeof media === 'string' 
+        ? media 
+        : (media?.media_url || media?.storage_url);
+      const mediaType = typeof media === 'string' 
+        ? 'image' 
+        : (media?.media_type || 'image');
+      return { mediaUrl, mediaType };
+    };
+
+    const isImageType = (type) => 
+      type === 'image' || type === 'ImageMediaEnum' || type?.includes('image');
+    
+    const isVideoType = (type) => 
+      type === 'video' || type?.includes('video');
+
+    // Render media section
+    const renderMedia = () => {
+      if (!item.media_items || item.media_items.length === 0) return null;
+
+      const mediaToShow = item.media_items.slice(0, 3);
+      const extraCount = item.media_items.length - 3;
+
+      // Collect all image URLs for swipeable gallery
+      const allImageUrls = item.media_items
+        .map(media => {
+          const { mediaUrl, mediaType } = getMediaInfo(media);
+          return isImageType(mediaType) ? mediaUrl : null;
+        })
+        .filter(Boolean);
+
+      // Single media
+      if (mediaToShow.length === 1) {
+        const { mediaUrl, mediaType } = getMediaInfo(mediaToShow[0]);
+        if (mediaUrl && isImageType(mediaType)) {
+          return (
+            <View style={twitterStyles.mediaContainer}>
+              <SmartImage uri={mediaUrl} style={twitterStyles.singleMedia} colors={colors} onPress={() => viewImage(allImageUrls, 0)} />
+            </View>
+          );
+        }
+        if (mediaUrl && isVideoType(mediaType)) {
+          return (
+            <View style={twitterStyles.mediaContainer}>
+              <VideoThumbnail uri={mediaUrl} style={twitterStyles.singleMedia} colors={colors} onPress={() => playVideo(mediaUrl)} />
+            </View>
+          );
+        }
+      }
+
+      // Two media items
+      if (mediaToShow.length === 2) {
+        let imageIndex = 0;
+        return (
+          <View style={[twitterStyles.mediaContainer, twitterStyles.mediaGrid2]}>
+            {mediaToShow.map((media, index) => {
+              const { mediaUrl, mediaType } = getMediaInfo(media);
+              if (mediaUrl && isImageType(mediaType)) {
+                const currentImageIndex = imageIndex++;
+                return <SmartImage key={index} uri={mediaUrl} style={twitterStyles.mediaGrid2Item} colors={colors} onPress={() => viewImage(allImageUrls, currentImageIndex)} />;
+              }
+              if (mediaUrl && isVideoType(mediaType)) {
+                return <VideoThumbnail key={index} uri={mediaUrl} style={twitterStyles.mediaGrid2Item} colors={colors} onPress={() => playVideo(mediaUrl)} />;
+              }
+              return null;
+            })}
           </View>
-          <View style={[styles.categoryBadge, { backgroundColor: getCategoryColor(item.event_category) + '20' }]}>
-            <Text style={[styles.categoryText, { color: getCategoryColor(item.event_category) }]}>
-              {item.event_category}
-            </Text>
-          </View>
-        </View>
+        );
+      }
 
-        {/* Credibility Score Bar */}
-        <View style={styles.credibilityBar}>
-          <View style={styles.credibilityBarBg}>
-            <View 
-              style={[
-                styles.credibilityBarFill, 
-                { 
-                  width: `${item.credibility_score * 100}%`,
-                  backgroundColor: getCredibilityColor(item.credibility_score)
-                }
-              ]} 
-            />
-          </View>
-          <View style={styles.credibilityInfo}>
-            <Ionicons 
-              name="shield-checkmark" 
-              size={14} 
-              color={getCredibilityColor(item.credibility_score)} 
-            />
-            <Text style={[styles.credibilityPercentText, { 
-              color: getCredibilityColor(item.credibility_score) 
-            }]}>
-              {Math.round(item.credibility_score * 100)}% credible
-            </Text>
-            <Text style={[styles.timeText, { color: colors.gray, marginLeft: 'auto' }]}>
-              {formatTimeAgo(item.created_at)}
-            </Text>
-          </View>
-        </View>
+      // Three+ media items
+      if (mediaToShow.length >= 3) {
+        const { mediaUrl: url1, mediaType: type1 } = getMediaInfo(mediaToShow[0]);
+        const { mediaUrl: url2, mediaType: type2 } = getMediaInfo(mediaToShow[1]);
+        const { mediaUrl: url3, mediaType: type3 } = getMediaInfo(mediaToShow[2]);
 
-        {/* Content */}
-        <Text style={[styles.contentText, { color: colors.text }]}>
-          {item.content}
-        </Text>
+        // Calculate image indices for each position
+        let imgIdx = 0;
+        const idx1 = isImageType(type1) ? imgIdx++ : -1;
+        const idx2 = isImageType(type2) ? imgIdx++ : -1;
+        const idx3 = isImageType(type3) ? imgIdx++ : -1;
 
-        {/* Media Grid - Show up to 3 images */}
-        {item.media_items && item.media_items.length > 0 && (() => {
-          // Get up to 3 media items
-          const mediaToShow = item.media_items.slice(0, 3);
-          const totalMedia = item.media_items.length;
-          const extraCount = totalMedia - 3;
-
-          // Helper to get media URL and type
-          const getMediaInfo = (media) => {
-            const mediaUrl = typeof media === 'string' 
-              ? media 
-              : (media?.media_url || media?.storage_url);
-            const mediaType = typeof media === 'string' 
-              ? 'image' 
-              : (media?.media_type || 'image');
-            return { mediaUrl, mediaType };
-          };
-
-          // Check if media is an image type
-          const isImageType = (type) => 
-            type === 'image' || type === 'ImageMediaEnum' || type?.includes('image');
-          
-          // Check if media is a video type
-          const isVideoType = (type) => 
-            type === 'video' || type?.includes('video');
-
-          // Single media item
-          if (mediaToShow.length === 1) {
-            const { mediaUrl, mediaType } = getMediaInfo(mediaToShow[0]);
-            if (mediaUrl && isImageType(mediaType)) {
-              return (
-                <SmartImage 
-                  uri={mediaUrl}
-                  style={styles.mediaImage}
-                  colors={colors}
-                />
-              );
-            }
-            if (mediaUrl && isVideoType(mediaType)) {
-              return (
-                <VideoThumbnail 
-                  uri={mediaUrl}
-                  style={styles.mediaImage}
-                  colors={colors}
-                  onPress={() => playVideo(mediaUrl)}
-                />
-              );
-            }
-          }
-
-          // Two media items - side by side
-          if (mediaToShow.length === 2) {
-            return (
-              <View style={styles.mediaGrid2}>
-                {mediaToShow.map((media, index) => {
-                  const { mediaUrl, mediaType } = getMediaInfo(media);
-                  if (mediaUrl && isImageType(mediaType)) {
-                    return (
-                      <SmartImage 
-                        key={index}
-                        uri={mediaUrl}
-                        style={styles.mediaGrid2Item}
-                        colors={colors}
-                      />
-                    );
-                  }
-                  if (mediaUrl && isVideoType(mediaType)) {
-                    return (
-                      <VideoThumbnail 
-                        key={index}
-                        uri={mediaUrl}
-                        style={styles.mediaGrid2Item}
-                        colors={colors}
-                        onPress={() => playVideo(mediaUrl)}
-                      />
-                    );
-                  }
-                  return null;
-                })}
-              </View>
-            );
-          }
-
-          // Three or more media items - 1 large + 2 small
-          if (mediaToShow.length >= 3) {
-            const { mediaUrl: url1, mediaType: type1 } = getMediaInfo(mediaToShow[0]);
-            const { mediaUrl: url2, mediaType: type2 } = getMediaInfo(mediaToShow[1]);
-            const { mediaUrl: url3, mediaType: type3 } = getMediaInfo(mediaToShow[2]);
-
-            return (
-              <View style={styles.mediaGrid3}>
-                {/* Large image on the left */}
-                <View style={styles.mediaGrid3Left}>
-                  {url1 && isImageType(type1) ? (
-                    <SmartImage 
-                      uri={url1}
-                      style={styles.mediaGrid3Large}
-                      colors={colors}
-                    />
-                  ) : url1 && isVideoType(type1) ? (
-                    <VideoThumbnail 
-                      uri={url1}
-                      style={styles.mediaGrid3Large}
-                      colors={colors}
-                      onPress={() => playVideo(url1)}
-                    />
-                  ) : null}
-                </View>
-                
-                {/* Two small images on the right */}
-                <View style={styles.mediaGrid3Right}>
-                  {url2 && isImageType(type2) ? (
-                    <SmartImage 
-                      uri={url2}
-                      style={styles.mediaGrid3Small}
-                      colors={colors}
-                    />
-                  ) : url2 && isVideoType(type2) ? (
-                    <VideoThumbnail 
-                      uri={url2}
-                      style={styles.mediaGrid3Small}
-                      colors={colors}
-                      onPress={() => playVideo(url2)}
-                    />
-                  ) : null}
-                  
-                  <View style={styles.mediaGrid3SmallWrapper}>
-                    {url3 && isImageType(type3) ? (
-                      <SmartImage 
-                        uri={url3}
-                        style={styles.mediaGrid3Small}
-                        colors={colors}
-                      />
-                    ) : url3 && isVideoType(type3) ? (
-                      <VideoThumbnail 
-                        uri={url3}
-                        style={styles.mediaGrid3Small}
-                        colors={colors}
-                        onPress={() => playVideo(url3)}
-                      />
-                    ) : null}
-                    
-                    {/* Show "+X" overlay if more than 3 media items */}
-                    {extraCount > 0 && (
-                      <View style={styles.mediaOverlay}>
-                        <Text style={styles.mediaOverlayText}>+{extraCount}</Text>
-                      </View>
-                    )}
+        return (
+          <View style={[twitterStyles.mediaContainer, twitterStyles.mediaGrid3]}>
+            <View style={twitterStyles.mediaGrid3Left}>
+              {url1 && isImageType(type1) ? (
+                <SmartImage uri={url1} style={twitterStyles.mediaGrid3Large} colors={colors} onPress={() => viewImage(allImageUrls, idx1)} />
+              ) : url1 && isVideoType(type1) ? (
+                <VideoThumbnail uri={url1} style={twitterStyles.mediaGrid3Large} colors={colors} onPress={() => playVideo(url1)} />
+              ) : null}
+            </View>
+            <View style={twitterStyles.mediaGrid3Right}>
+              {url2 && isImageType(type2) ? (
+                <SmartImage uri={url2} style={twitterStyles.mediaGrid3Small} colors={colors} onPress={() => viewImage(allImageUrls, idx2)} />
+              ) : url2 && isVideoType(type2) ? (
+                <VideoThumbnail uri={url2} style={twitterStyles.mediaGrid3Small} colors={colors} onPress={() => playVideo(url2)} />
+              ) : null}
+              <View style={twitterStyles.mediaGrid3SmallWrapper}>
+                {url3 && isImageType(type3) ? (
+                  <SmartImage uri={url3} style={twitterStyles.mediaGrid3Small} colors={colors} onPress={() => viewImage(allImageUrls, idx3)} />
+                ) : url3 && isVideoType(type3) ? (
+                  <VideoThumbnail uri={url3} style={twitterStyles.mediaGrid3Small} colors={colors} onPress={() => playVideo(url3)} />
+                ) : null}
+                {extraCount > 0 && (
+                  <View style={twitterStyles.mediaOverlay}>
+                    <Text style={twitterStyles.mediaOverlayText}>+{extraCount}</Text>
                   </View>
-                </View>
+                )}
               </View>
-            );
-          }
+            </View>
+          </View>
+        );
+      }
 
-          return null;
-        })()}
+      return null;
+    };
 
-        {/* Footer - Voting & Interactions */}
-        <PostInteractions
-          postId={item.id}
-          initialUpvotes={item.upvotes || 0}
-          initialDownvotes={item.downvotes || 0}
-          initialFlags={item.flags || 0}
-          initialUserVote={item.user_vote || null}
-          initialUserFlagged={item.user_flagged || false}
-          colors={colors}
-          onInteractionError={(message) => Alert.alert('Error', message)}
-        />
+    // Get credibility label
+    const getCredibilityLabel = (score) => {
+      if (score >= 0.7) return 'High';
+      if (score >= 0.4) return 'Medium';
+      return 'Low';
+    };
+
+    return (
+      <View style={[twitterStyles.post, { borderBottomColor: colors.border, backgroundColor: colors.surface }]}>
+        <View style={twitterStyles.postContent}>
+          {/* Avatar - Shows category icon with credibility-colored background */}
+          <TouchableOpacity 
+            style={[twitterStyles.avatarPlaceholder, { 
+              backgroundColor: getCredibilityColor(item.credibility_score) + '20',
+              borderWidth: 2,
+              borderColor: getCredibilityColor(item.credibility_score) + '50'
+            }]}
+            onPress={() => showCredibilityInfo(item.credibility_score)}
+            activeOpacity={0.7}
+          >
+            <Ionicons name={getCategoryIcon(item.event_category)} size={20} color={getCategoryColor(item.event_category)} />
+            {/* Credibility indicator dot */}
+            <View style={[twitterStyles.credibilityDot, { backgroundColor: getCredibilityColor(item.credibility_score) }]} />
+          </TouchableOpacity>
+
+          {/* Post Body */}
+          <View style={twitterStyles.postBody}>
+            {/* Header: Category + Time + Distance */}
+            <View style={twitterStyles.postHeader}>
+              <Text style={[twitterStyles.displayName, { color: colors.text }]}>
+                {item.event_category}
+              </Text>
+              <Text style={[twitterStyles.dot, { color: colors.gray }]}>·</Text>
+              <Text style={[twitterStyles.time, { color: colors.gray }]}>
+                {formatTimeAgo(item.created_at)}
+              </Text>
+              {distance && (
+                <>
+                  <Text style={[twitterStyles.dot, { color: colors.gray }]}>·</Text>
+                  <Text style={[twitterStyles.time, { color: colors.gray }]}>
+                    {distance < 1 ? `${Math.round(distance * 1000)}m` : `${distance.toFixed(1)}km`}
+                  </Text>
+                </>
+              )}
+            </View>
+
+            {/* Subtext: Location (tappable with visual hint) */}
+            <TouchableOpacity 
+              style={twitterStyles.locationTouchable}
+              onPress={() => showLocationInfo(incidentLocation, item.location_lat, item.location_lon, distance)}
+              activeOpacity={0.6}
+            >
+              <View style={[twitterStyles.locationPill, { backgroundColor: colors.primary + '10' }]}>
+                <Ionicons name="location" size={12} color={colors.primary} />
+                <Text style={[twitterStyles.locationPillText, { color: colors.primary }]} numberOfLines={1}>
+                  {incidentLocation}
+                </Text>
+                <Ionicons name="chevron-forward" size={12} color={colors.primary} style={{ opacity: 0.6 }} />
+              </View>
+            </TouchableOpacity>
+
+            {/* Content */}
+            <Text style={[twitterStyles.contentText, { color: colors.text }]}>
+              {item.content}
+            </Text>
+
+            {/* Media */}
+            {renderMedia()}
+
+            {/* Action Bar */}
+            <PostInteractions
+              postId={item.id}
+              initialUpvotes={item.upvotes || 0}
+              initialDownvotes={item.downvotes || 0}
+              initialFlags={item.flags || 0}
+              initialUserVote={item.user_vote || null}
+              initialUserFlagged={item.user_flagged || false}
+              colors={colors}
+              onInteractionError={(message) => Alert.alert('Error', message)}
+            />
+          </View>
+        </View>
       </View>
     );
-  }, [userLocation, locationCache, colors, playVideo]);
+  }, [userLocation, locationCache, colors, playVideo, showCredibilityInfo, showLocationInfo]);
 
   if (!locationPermission) {
     return (
@@ -1317,19 +1571,18 @@ export default function HomeScreen() {
               size={18} 
               color={colors.gray} 
             />
-            <SkeletonPlaceholder width={120} height={16} colors={colors} />
+            <View style={{ width: 120, height: 16, backgroundColor: colors.border, borderRadius: 4 }} />
           </View>
           <View style={[styles.locationButton, { backgroundColor: colors.border }]}>
-            <SkeletonPlaceholder width={100} height={16} colors={colors} />
+            <View style={{ width: 100, height: 16, backgroundColor: colors.border, borderRadius: 4 }} />
           </View>
         </View>
         
-        {/* Skeleton Cards */}
+        {/* Skeleton Cards - Twitter Style */}
         <FlatList
-          data={[1, 2, 3, 4]}
-          renderItem={() => <SkeletonCard colors={colors} />}
+          data={[1, 2, 3, 4, 5]}
+          renderItem={() => <TwitterSkeleton colors={colors} />}
           keyExtractor={(item) => item.toString()}
-          contentContainerStyle={styles.feedList}
           showsVerticalScrollIndicator={false}
         />
       </View>
@@ -1359,35 +1612,35 @@ export default function HomeScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* Location Bar */}
-      <View style={[styles.locationBar, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
-        <View style={styles.locationInfo}>
-          <Ionicons 
-            name={isUsingRealLocation ? "location" : "location-outline"} 
-            size={18} 
-            color={isUsingRealLocation ? colors.primary : colors.gray} 
-          />
-          <Text style={[styles.locationBarText, { color: colors.text }]}>
-            {locationName}
-          </Text>
-          {!isUsingRealLocation && (
-            <View style={[styles.defaultBadge, { backgroundColor: colors.primary + '20' }]}>
-              <Text style={[styles.defaultBadgeText, { color: colors.primary }]}>Default</Text>
-            </View>
-          )}
-        </View>
+      {/* Location Bar - Modern Design */}
+      <View style={[styles.locationBar, { backgroundColor: isDark ? '#1a1a1a' : '#f8f9fa' }]}>
         <TouchableOpacity 
-          style={[styles.locationButton, { backgroundColor: colors.primary }]}
+          style={[styles.locationInfo, { backgroundColor: isDark ? '#252525' : '#fff' }]}
           onPress={refreshLocation}
           disabled={isLoadingLocation}
+          activeOpacity={0.7}
         >
+          <View style={[styles.locationIconContainer, { backgroundColor: isUsingRealLocation ? colors.primary + '15' : colors.gray + '15' }]}>
+            <Ionicons 
+              name={isUsingRealLocation ? "location" : "location-outline"} 
+              size={16} 
+              color={isUsingRealLocation ? colors.primary : colors.gray} 
+            />
+          </View>
+          <View style={styles.locationTextContainer}>
+            <Text style={[styles.locationLabel, { color: colors.gray }]}>
+              {isUsingRealLocation ? 'Your Location' : 'Default Location'}
+            </Text>
+            <Text style={[styles.locationBarText, { color: colors.text }]} numberOfLines={1}>
+              {locationName}
+            </Text>
+          </View>
           {isLoadingLocation ? (
-            <ActivityIndicator size="small" color="#fff" />
+            <ActivityIndicator size="small" color={colors.primary} />
           ) : (
-            <>
-              <Ionicons name="navigate" size={16} color="#fff" />
-              <Text style={styles.locationButtonText}>Use My Location</Text>
-            </>
+            <View style={[styles.refreshButton, { backgroundColor: colors.primary }]}>
+              <Ionicons name="navigate" size={14} color="#fff" />
+            </View>
           )}
         </TouchableOpacity>
       </View>
@@ -1397,8 +1650,8 @@ export default function HomeScreen() {
         data={posts}
         renderItem={renderPost}
         keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.feedList}
         showsVerticalScrollIndicator={false}
+        ItemSeparatorComponent={() => null}
         // Performance optimizations
         removeClippedSubviews={true}
         maxToRenderPerBatch={5}
@@ -1436,6 +1689,128 @@ export default function HomeScreen() {
         }}
         colors={colors}
       />
+
+      {/* Image Viewer Modal */}
+      <ImageViewerModal
+        visible={imageModalVisible}
+        images={currentImages}
+        initialIndex={currentImageIndex}
+        onClose={() => {
+          setImageModalVisible(false);
+          setCurrentImages([]);
+          setCurrentImageIndex(0);
+        }}
+      />
+
+      {/* Credibility Info Modal */}
+      <Modal
+        visible={credibilityModal.visible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setCredibilityModal({ visible: false, score: 0 })}
+      >
+        <TouchableOpacity 
+          style={styles.credibilityOverlay}
+          activeOpacity={1}
+          onPress={() => setCredibilityModal({ visible: false, score: 0 })}
+        >
+          <View style={[styles.credibilityCard, { backgroundColor: colors.surface }]}>
+            {/* Circular Progress Indicator */}
+            <View style={styles.credibilityCircleContainer}>
+              <View style={[styles.credibilityCircle, { 
+                borderColor: getCredibilityColor(credibilityModal.score),
+                backgroundColor: getCredibilityColor(credibilityModal.score) + '15'
+              }]}>
+                <Text style={[styles.credibilityPercentage, { color: getCredibilityColor(credibilityModal.score) }]}>
+                  {Math.round(credibilityModal.score * 100)}%
+                </Text>
+              </View>
+            </View>
+
+            {/* Label */}
+            <View style={[styles.credibilityLabelBadge, { backgroundColor: getCredibilityColor(credibilityModal.score) + '20' }]}>
+              <Ionicons 
+                name={credibilityModal.score >= 0.7 ? "shield-checkmark" : credibilityModal.score >= 0.4 ? "shield-half" : "shield-outline"} 
+                size={16} 
+                color={getCredibilityColor(credibilityModal.score)} 
+              />
+              <Text style={[styles.credibilityLabel, { color: getCredibilityColor(credibilityModal.score) }]}>
+                {credibilityModal.score >= 0.7 ? 'High Credibility' : credibilityModal.score >= 0.4 ? 'Medium Credibility' : 'Low Credibility'}
+              </Text>
+            </View>
+
+            {/* Description */}
+            <Text style={[styles.credibilityDescription, { color: colors.gray }]}>
+              This score is calculated using AI analysis of media authenticity, content verification, and community feedback.
+            </Text>
+
+            {/* Tap to dismiss hint */}
+            <Text style={[styles.credibilityHint, { color: colors.gray }]}>
+              Tap anywhere to dismiss
+            </Text>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* Location Info Modal */}
+      <Modal
+        visible={locationModal.visible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setLocationModal({ ...locationModal, visible: false })}
+      >
+        <TouchableOpacity 
+          style={styles.credibilityOverlay}
+          activeOpacity={1}
+          onPress={() => setLocationModal({ ...locationModal, visible: false })}
+        >
+          <View style={[styles.locationCard, { backgroundColor: colors.surface }]}>
+            {/* Map Pin Icon */}
+            <View style={[styles.locationIconCircle, { backgroundColor: colors.primary + '15' }]}>
+              <Ionicons name="location" size={32} color={colors.primary} />
+            </View>
+
+            {/* Location Name */}
+            <Text style={[styles.locationTitle, { color: colors.text }]}>
+              {locationModal.name}
+            </Text>
+
+            {/* Coordinates */}
+            <View style={[styles.coordinatesContainer, { backgroundColor: colors.border + '50' }]}>
+              <View style={styles.coordinateRow}>
+                <Text style={[styles.coordinateLabel, { color: colors.gray }]}>Latitude</Text>
+                <Text style={[styles.coordinateValue, { color: colors.text }]}>
+                  {locationModal.lat.toFixed(6)}°
+                </Text>
+              </View>
+              <View style={[styles.coordinateDivider, { backgroundColor: colors.border }]} />
+              <View style={styles.coordinateRow}>
+                <Text style={[styles.coordinateLabel, { color: colors.gray }]}>Longitude</Text>
+                <Text style={[styles.coordinateValue, { color: colors.text }]}>
+                  {locationModal.lon.toFixed(6)}°
+                </Text>
+              </View>
+            </View>
+
+            {/* Distance Badge */}
+            {locationModal.distance && (
+              <View style={[styles.distanceBadge, { backgroundColor: colors.primary }]}>
+                <Ionicons name="navigate" size={14} color="#fff" />
+                <Text style={styles.distanceText}>
+                  {locationModal.distance < 1 
+                    ? `${Math.round(locationModal.distance * 1000)} meters away` 
+                    : `${locationModal.distance.toFixed(1)} km away`}
+                </Text>
+              </View>
+            )}
+
+            {/* Tap to dismiss hint */}
+            <Text style={[styles.credibilityHint, { color: colors.gray, marginTop: 16 }]}>
+              Tap anywhere to dismiss
+            </Text>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 }
@@ -1445,22 +1820,49 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   locationBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
+    paddingVertical: 10,
   },
   locationInfo: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 14,
+    gap: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 1,
+  },
+  locationIconContainer: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  locationTextContainer: {
     flex: 1,
+  },
+  locationLabel: {
+    fontSize: 11,
+    fontWeight: '500',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 2,
   },
   locationBarText: {
     fontSize: 14,
-    fontWeight: '500',
+    fontWeight: '600',
+  },
+  refreshButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   defaultBadge: {
     paddingHorizontal: 8,
@@ -1807,5 +2209,441 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
+  },
+  // Image viewer styles
+  imageViewerWrapper: {
+    width: SCREEN_WIDTH,
+    height: SCREEN_HEIGHT,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  fullscreenImage: {
+    width: SCREEN_WIDTH,
+    height: SCREEN_HEIGHT * 0.85,
+  },
+  imageSlide: {
+    width: SCREEN_WIDTH,
+    height: SCREEN_HEIGHT,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  imageCounter: {
+    position: 'absolute',
+    top: 50,
+    left: 20,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    zIndex: 10,
+  },
+  imageCounterText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  paginationDots: {
+    position: 'absolute',
+    bottom: 50,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: '100%',
+  },
+  paginationDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: 'rgba(255, 255, 255, 0.4)',
+    marginHorizontal: 4,
+  },
+  paginationDotActive: {
+    backgroundColor: '#fff',
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  // Credibility Modal Styles
+  credibilityOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  credibilityCard: {
+    width: '100%',
+    maxWidth: 300,
+    borderRadius: 24,
+    padding: 28,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+    elevation: 15,
+  },
+  credibilityCircleContainer: {
+    marginBottom: 20,
+  },
+  credibilityCircle: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    borderWidth: 4,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  credibilityPercentage: {
+    fontSize: 32,
+    fontWeight: '800',
+  },
+  credibilityLabelBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    gap: 8,
+    marginBottom: 16,
+  },
+  credibilityLabel: {
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  credibilityDescription: {
+    fontSize: 13,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 16,
+  },
+  credibilityHint: {
+    fontSize: 12,
+    opacity: 0.6,
+  },
+  // Location Modal Styles
+  locationCard: {
+    width: '100%',
+    maxWidth: 320,
+    borderRadius: 24,
+    padding: 28,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+    elevation: 15,
+  },
+  locationIconCircle: {
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  locationTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  coordinatesContainer: {
+    width: '100%',
+    borderRadius: 16,
+    overflow: 'hidden',
+    marginBottom: 16,
+  },
+  coordinateRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  coordinateLabel: {
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  coordinateValue: {
+    fontSize: 13,
+    fontWeight: '600',
+    fontFamily: 'monospace',
+  },
+  coordinateDivider: {
+    height: 1,
+    width: '100%',
+  },
+  distanceBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    gap: 8,
+  },
+  distanceText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+});
+
+// ============ TWITTER-STYLE STYLESHEET ============
+const twitterStyles = StyleSheet.create({
+  // Post container - no cards, just dividers
+  post: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+  },
+  postContent: {
+    flexDirection: 'row',
+  },
+  // Avatar
+  avatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    marginRight: 12,
+  },
+  avatarPlaceholder: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    marginRight: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  avatarSkeleton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    marginRight: 12,
+  },
+  // Post body (right side of avatar)
+  postBody: {
+    flex: 1,
+  },
+  // Header row: name, handle, time
+  postHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    marginBottom: 2,
+  },
+  displayName: {
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  handle: {
+    fontSize: 14,
+    marginLeft: 4,
+  },
+  dot: {
+    fontSize: 14,
+    marginHorizontal: 4,
+  },
+  time: {
+    fontSize: 14,
+  },
+  // Handle/subtitle text (location line)
+  handleText: {
+    fontSize: 13,
+    marginBottom: 6,
+  },
+  // Location pill (tappable with visual hint)
+  locationTouchable: {
+    alignSelf: 'flex-start',
+    marginBottom: 8,
+  },
+  locationPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 14,
+    gap: 5,
+    maxWidth: '100%',
+  },
+  locationPillText: {
+    fontSize: 12,
+    fontWeight: '500',
+    flexShrink: 1,
+  },
+  // Credibility indicator dot on avatar
+  credibilityDot: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: '#fff',
+  },
+  // Category badge (inline)
+  categoryBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 12,
+    marginLeft: 8,
+  },
+  categoryText: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  // Location & credibility row
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+    flexWrap: 'wrap',
+  },
+  locationBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+    marginRight: 8,
+  },
+  locationText: {
+    fontSize: 12,
+    marginLeft: 4,
+    fontWeight: '500',
+  },
+  credibilityBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+  },
+  credibilityText: {
+    fontSize: 12,
+    marginLeft: 4,
+    fontWeight: '600',
+  },
+  // Content text
+  contentText: {
+    fontSize: 15,
+    lineHeight: 20,
+    marginBottom: 12,
+  },
+  // Media
+  mediaContainer: {
+    borderRadius: 16,
+    overflow: 'hidden',
+    marginBottom: 12,
+  },
+  singleMedia: {
+    width: '100%',
+    height: 200,
+    borderRadius: 16,
+  },
+  mediaGrid2: {
+    flexDirection: 'row',
+    gap: 2,
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  mediaGrid2Item: {
+    flex: 1,
+    height: 180,
+  },
+  mediaGrid3: {
+    flexDirection: 'row',
+    gap: 2,
+    height: 200,
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  mediaGrid3Left: {
+    flex: 2,
+  },
+  mediaGrid3Large: {
+    width: '100%',
+    height: '100%',
+  },
+  mediaGrid3Right: {
+    flex: 1,
+    gap: 2,
+  },
+  mediaGrid3Small: {
+    width: '100%',
+    height: '100%',
+  },
+  mediaGrid3SmallWrapper: {
+    flex: 1,
+    position: 'relative',
+  },
+  mediaOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  mediaOverlayText: {
+    color: '#fff',
+    fontSize: 22,
+    fontWeight: '700',
+  },
+  // Action bar
+  actionBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 4,
+    paddingRight: 48,
+  },
+  actionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 8,
+    marginLeft: -8,
+  },
+  actionText: {
+    fontSize: 13,
+    marginLeft: 4,
+  },
+  // Skeleton styles
+  skeletonHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  skeletonName: {
+    width: 100,
+    height: 14,
+    borderRadius: 4,
+  },
+  skeletonHandle: {
+    width: 80,
+    height: 12,
+    borderRadius: 4,
+    marginLeft: 8,
+  },
+  skeletonText: {
+    height: 14,
+    borderRadius: 4,
+    marginBottom: 8,
+  },
+  skeletonMedia: {
+    width: '100%',
+    height: 180,
+    borderRadius: 16,
+    marginTop: 4,
+    marginBottom: 8,
+  },
+  skeletonActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingRight: 48,
+    marginTop: 8,
+  },
+  skeletonAction: {
+    width: 40,
+    height: 16,
+    borderRadius: 4,
   },
 });

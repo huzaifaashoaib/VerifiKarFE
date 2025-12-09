@@ -1,11 +1,39 @@
 import { Ionicons } from '@expo/vector-icons';
-import React from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import React, { useEffect } from 'react';
 import { ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
 import { useTheme } from '../styles/ThemeContext';
+
+const NOTIFICATIONS_KEY = '@verifikar_notifications_enabled';
 
 export default function SettingsScreen() {
   const { colors, isDark, toggleTheme } = useTheme();
   const [notificationsEnabled, setNotificationsEnabled] = React.useState(true);
+
+  // Load notifications preference on mount
+  useEffect(() => {
+    loadNotificationsPreference();
+  }, []);
+
+  const loadNotificationsPreference = async () => {
+    try {
+      const saved = await AsyncStorage.getItem(NOTIFICATIONS_KEY);
+      if (saved !== null) {
+        setNotificationsEnabled(saved === 'true');
+      }
+    } catch (error) {
+      console.log('Error loading notifications preference:', error);
+    }
+  };
+
+  const handleNotificationsToggle = async (value) => {
+    setNotificationsEnabled(value);
+    try {
+      await AsyncStorage.setItem(NOTIFICATIONS_KEY, value.toString());
+    } catch (error) {
+      console.log('Error saving notifications preference:', error);
+    }
+  };
 
   return (
     <ScrollView style={[styles.container, { backgroundColor: colors.background }]}>
@@ -34,7 +62,7 @@ export default function SettingsScreen() {
           </View>
           <Switch
             value={notificationsEnabled}
-            onValueChange={setNotificationsEnabled}
+            onValueChange={handleNotificationsToggle}
             trackColor={{ false: colors.gray, true: colors.primary }}
             thumbColor={colors.surface}
           />
