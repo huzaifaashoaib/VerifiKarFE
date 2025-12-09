@@ -104,32 +104,119 @@ export default function ReportScreen() {
         return;
       }
 
-      Alert.alert('Getting Location', 'Please wait...');
-      const currentLocation = await Location.getCurrentPositionAsync({});
-      const { latitude, longitude } = currentLocation.coords;
+      // Show loading indicator
+      Alert.alert('Getting Location', 'Please wait while we fetch your location...');
       
-      // Reverse geocode to get address
-      const address = await Location.reverseGeocodeAsync({ latitude, longitude });
-      if (address[0]) {
-        const addressParts = [];
-        if (address[0].street) addressParts.push(address[0].street);
-        if (address[0].city) addressParts.push(address[0].city);
-        if (address[0].region) addressParts.push(address[0].region);
-        if (address[0].country) addressParts.push(address[0].country);
+      try {
+        // Try to get current position with timeout and lower accuracy for faster response
+        const currentLocation = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+          maximumAge: 10000,
+          timeout: 10000,
+        });
+        const { latitude, longitude } = currentLocation.coords;
         
-        const addressString = addressParts.join(', ');
-        setLocation(addressString);
+        // Store coordinates for submission
+        setSelectedCoordinates({ latitude, longitude });
+        
+        // Update map region
+        setMapRegion({
+          latitude,
+          longitude,
+          latitudeDelta: 0.01,
+          longitudeDelta: 0.01,
+        });
+        
+        // Reverse geocode to get address
+        try {
+          const address = await Location.reverseGeocodeAsync({ latitude, longitude });
+          if (address[0]) {
+            const addressParts = [];
+            if (address[0].street) addressParts.push(address[0].street);
+            if (address[0].district) addressParts.push(address[0].district);
+            if (address[0].city) addressParts.push(address[0].city);
+            if (address[0].region) addressParts.push(address[0].region);
+            
+            const addressString = addressParts.filter(p => p).join(', ') || `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
+            setLocation(addressString);
+          } else {
+            setLocation(`${latitude.toFixed(6)}, ${longitude.toFixed(6)}`);
+          }
+        } catch (geocodeError) {
+          console.log('Geocoding failed, using coordinates:', geocodeError);
+          setLocation(`${latitude.toFixed(6)}, ${longitude.toFixed(6)}`);
+        }
+        
         if (errors.location) {
           setErrors(prev => ({ ...prev, location: '' }));
         }
-      } else {
-        setLocation(`${latitude.toFixed(6)}, ${longitude.toFixed(6)}`);
+        
+        Alert.alert('Success', 'Current location captured!');
+      } catch (locError) {
+        console.error('Error getting current position:', locError);
+        
+        // Try last known location as fallback
+        try {
+          const lastKnown = await Location.getLastKnownPositionAsync({
+            maxAge: 60000,
+          });
+          
+          if (lastKnown) {
+            const { latitude, longitude } = lastKnown.coords;
+            setSelectedCoordinates({ latitude, longitude });
+            setMapRegion({
+              latitude,
+              longitude,
+              latitudeDelta: 0.01,
+              longitudeDelta: 0.01,
+            });
+            
+            try {
+              const address = await Location.reverseGeocodeAsync({ latitude, longitude });
+              if (address[0]) {
+                const addressParts = [];
+                if (address[0].street) addressParts.push(address[0].street);
+                if (address[0].district) addressParts.push(address[0].district);
+                if (address[0].city) addressParts.push(address[0].city);
+                
+                const addressString = addressParts.filter(p => p).join(', ') || `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
+                setLocation(addressString);
+              } else {
+                setLocation(`${latitude.toFixed(6)}, ${longitude.toFixed(6)}`);
+              }
+            } catch (e) {
+              setLocation(`${latitude.toFixed(6)}, ${longitude.toFixed(6)}`);
+            }
+            
+            if (errors.location) {
+              setErrors(prev => ({ ...prev, location: '' }));
+            }
+            
+            Alert.alert('Success', 'Using your last known location.');
+          } else {
+            Alert.alert(
+              'Location Unavailable',
+              'Could not get your current location. Please make sure:\n\n• Location services are enabled\n• GPS is turned on\n• You are not in airplane mode\n\nYou can also use the map to select a location manually.',
+              [
+                { text: 'Open Map', onPress: () => setShowMapModal(true) },
+                { text: 'OK' }
+              ]
+            );
+          }
+        } catch (fallbackError) {
+          Alert.alert(
+            'Location Error',
+            'Unable to fetch location. Please check your device settings or use the map to select a location.',
+            [
+              { text: 'Open Map', onPress: () => setShowMapModal(true) },
+              { text: 'OK' }
+            ]
+          );
+        }
       }
-      
-      Alert.alert('Success', 'Current location captured!');
     } catch (error) {
-      Alert.alert('Error', 'Unable to fetch current location. Please try again.');
-      console.error(error);
+      console.error('Location permission error:', error);
+      Alert.alert('Error', 'Unable to access location services. Please check your permissions.');
     }
   };
 
@@ -230,25 +317,58 @@ export default function ReportScreen() {
       return;
     }
 
-    // Always get current location and place marker
+    // Try to get current location for initial map position
+    let initialCoords = {
+      latitude: 24.8607,  // Default to Karachi
+      longitude: 67.0099,
+    };
+
     try {
-      const currentLocation = await Location.getCurrentPositionAsync({});
-      const coords = {
+      // Try current position first
+      const currentLocation = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+        maximumAge: 10000,
+        timeout: 10000,
+      });
+      initialCoords = {
         latitude: currentLocation.coords.latitude,
         longitude: currentLocation.coords.longitude,
       };
-      
-      setMapRegion({
-        ...coords,
-        latitudeDelta: 0.0922,
-        longitudeDelta: 0.0421,
-      });
-      
-      // Always set marker at current location when map opens
-      setSelectedCoordinates(coords);
-      
-      // Get address for the current location
-      const addresses = await Location.reverseGeocodeAsync(coords);
+      console.log('Got current location for map:', initialCoords);
+    } catch (error) {
+      console.log('Current location failed, trying last known...');
+      // Try last known location as fallback
+      try {
+        const lastKnown = await Location.getLastKnownPositionAsync({
+          maxAge: 300000, // 5 minutes
+        });
+        if (lastKnown) {
+          initialCoords = {
+            latitude: lastKnown.coords.latitude,
+            longitude: lastKnown.coords.longitude,
+          };
+          console.log('Using last known location for map:', initialCoords);
+        } else {
+          console.log('No last known location, using default (Karachi)');
+        }
+      } catch (fallbackError) {
+        console.log('Last known location failed, using default (Karachi)');
+      }
+    }
+
+    // Set map region to the location we found (or default)
+    setMapRegion({
+      ...initialCoords,
+      latitudeDelta: 0.0922,
+      longitudeDelta: 0.0421,
+    });
+    
+    // Set marker at initial location
+    setSelectedCoordinates(initialCoords);
+    
+    // Get address for the location
+    try {
+      const addresses = await Location.reverseGeocodeAsync(initialCoords);
       if (addresses && addresses.length > 0) {
         const addr = addresses[0];
         const fullAddress = [
@@ -257,16 +377,16 @@ export default function ReportScreen() {
           addr.district,
           addr.city,
           addr.region,
-          addr.country
         ].filter(Boolean).join(', ');
-        setLocation(fullAddress);
+        if (fullAddress) {
+          setLocation(fullAddress);
+        }
       }
-    } catch (error) {
-      console.log('Could not get current location for map');
-      Alert.alert('Error', 'Could not get your current location. Please try again.');
-      return;
+    } catch (geocodeError) {
+      console.log('Reverse geocoding failed:', geocodeError);
     }
 
+    // Always open the map - user can select location manually
     setShowMapModal(true);
   };
 

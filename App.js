@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import Slider from '@react-native-community/slider';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
@@ -43,9 +44,6 @@ function HeaderButtons() {
     { id: 'Social', name: 'Social', icon: 'people-outline' },
     { id: 'Emergency', name: 'Emergency', icon: 'alert-circle-outline' },
   ];
-
-  const credibilityOptions = [0.3, 0.5, 0.7, 0.8, 0.9];
-  const daysOptions = [1, 3, 7, 14, 30];
 
   const handleFilter = () => {
     setFilterVisible(true);
@@ -173,61 +171,63 @@ function HeaderButtons() {
                 </View>
               </View>
 
-              {/* Min Credibility */}
+              {/* Min Credibility Slider */}
               <View style={styles.filterSection}>
-                <Text style={[styles.filterLabel, { color: colors.text }]}>
-                  Min Credibility: {Math.round(minCredibility * 100)}%
-                </Text>
-                <View style={styles.optionGrid}>
-                  {credibilityOptions.map(cred => (
-                    <TouchableOpacity
-                      key={cred}
-                      style={[
-                        styles.optionChip,
-                        { 
-                          backgroundColor: minCredibility === cred ? colors.primary : colors.background,
-                          borderColor: colors.border
-                        }
-                      ]}
-                      onPress={() => setMinCredibility(cred)}
-                    >
-                      <Text style={[
-                        styles.optionText,
-                        { color: minCredibility === cred ? '#fff' : colors.text }
-                      ]}>
-                        {Math.round(cred * 100)}%
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
+                <View style={styles.sliderHeader}>
+                  <Text style={[styles.filterLabel, { color: colors.text }]}>
+                    Min Credibility
+                  </Text>
+                  <View style={[styles.sliderValue, { backgroundColor: colors.primary + '20' }]}>
+                    <Text style={[styles.sliderValueText, { color: colors.primary }]}>
+                      {Math.round(minCredibility * 100)}%
+                    </Text>
+                  </View>
+                </View>
+                <Slider
+                  style={styles.slider}
+                  minimumValue={0}
+                  maximumValue={1}
+                  step={0.05}
+                  value={minCredibility}
+                  onValueChange={setMinCredibility}
+                  minimumTrackTintColor={colors.primary}
+                  maximumTrackTintColor={colors.border}
+                  thumbTintColor={colors.primary}
+                />
+                <View style={styles.sliderLabels}>
+                  <Text style={[styles.sliderLabelText, { color: colors.gray }]}>0%</Text>
+                  <Text style={[styles.sliderLabelText, { color: colors.gray }]}>50%</Text>
+                  <Text style={[styles.sliderLabelText, { color: colors.gray }]}>100%</Text>
                 </View>
               </View>
 
-              {/* Max Days Old */}
+              {/* Max Days Old Slider */}
               <View style={styles.filterSection}>
-                <Text style={[styles.filterLabel, { color: colors.text }]}>
-                  Max Age: {maxDaysOld} days
-                </Text>
-                <View style={styles.optionGrid}>
-                  {daysOptions.map(days => (
-                    <TouchableOpacity
-                      key={days}
-                      style={[
-                        styles.optionChip,
-                        { 
-                          backgroundColor: maxDaysOld === days ? colors.primary : colors.background,
-                          borderColor: colors.border
-                        }
-                      ]}
-                      onPress={() => setMaxDaysOld(days)}
-                    >
-                      <Text style={[
-                        styles.optionText,
-                        { color: maxDaysOld === days ? '#fff' : colors.text }
-                      ]}>
-                        {days}d
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
+                <View style={styles.sliderHeader}>
+                  <Text style={[styles.filterLabel, { color: colors.text }]}>
+                    Max Age
+                  </Text>
+                  <View style={[styles.sliderValue, { backgroundColor: colors.primary + '20' }]}>
+                    <Text style={[styles.sliderValueText, { color: colors.primary }]}>
+                      {maxDaysOld} {maxDaysOld === 1 ? 'day' : 'days'}
+                    </Text>
+                  </View>
+                </View>
+                <Slider
+                  style={styles.slider}
+                  minimumValue={1}
+                  maximumValue={30}
+                  step={1}
+                  value={maxDaysOld}
+                  onValueChange={setMaxDaysOld}
+                  minimumTrackTintColor={colors.primary}
+                  maximumTrackTintColor={colors.border}
+                  thumbTintColor={colors.primary}
+                />
+                <View style={styles.sliderLabels}>
+                  <Text style={[styles.sliderLabelText, { color: colors.gray }]}>1d</Text>
+                  <Text style={[styles.sliderLabelText, { color: colors.gray }]}>15d</Text>
+                  <Text style={[styles.sliderLabelText, { color: colors.gray }]}>30d</Text>
                 </View>
               </View>
 
@@ -365,6 +365,33 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     marginBottom: 12,
+  },
+  sliderHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  sliderValue: {
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  sliderValueText: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  slider: {
+    width: '100%',
+    height: 40,
+  },
+  sliderLabels: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 4,
+  },
+  sliderLabelText: {
+    fontSize: 12,
   },
   optionGrid: {
     flexDirection: 'row',
