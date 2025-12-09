@@ -104,25 +104,23 @@ export function AuthProvider({ children }) {
       console.log('Signup response:', response.status, data);
 
       if (response.ok) {
-        // Success - Store token and user data
-        if (data.access_token) {
-          await AsyncStorage.setItem('authToken', data.access_token);
+        // Signup successful! Now automatically log the user in to get a token
+        console.log('Signup successful! Now logging in...');
+        
+        // Call the login function to get the JWT token
+        const loginResult = await login(email, password);
+        
+        if (loginResult.success) {
+          console.log('Auto-login after signup successful!');
+          return { success: true };
+        } else {
+          // Signup succeeded but login failed - user needs to login manually
+          console.log('Signup succeeded but auto-login failed:', loginResult.message);
+          return { 
+            success: true, 
+            message: 'Account created! Please log in to continue.' 
+          };
         }
-        
-        // Store user data (if backend returns user info)
-        const userData = {
-          user_id: data.user_id || data.id,
-          name: name,
-          email: email,
-          createdAt: new Date().toISOString(),
-          ...data.user, // Include any additional user data from backend
-        };
-        
-        await AsyncStorage.setItem('userData', JSON.stringify(userData));
-        setUser(userData);
-        
-        console.log('Signup successful!');
-        return { success: true };
       } else {
         // Server returned an error
         const errorMessage = data.detail || data.message || 'Signup failed. Please try again.';

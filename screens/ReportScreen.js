@@ -459,8 +459,16 @@ export default function ReportScreen() {
 
       // 1. Retrieve JWT token from AsyncStorage
       const token = await AsyncStorage.getItem('authToken');
+      console.log('[ReportSubmit] Token retrieved:', token ? `${token.substring(0, 20)}...` : 'null');
+      
       if (!token) {
-        Alert.alert('Authentication Required', 'Please log in to submit a report.');
+        Alert.alert(
+          'Authentication Required', 
+          'You must be logged in to submit a report. Please log out and log back in.',
+          [
+            { text: 'OK' }
+          ]
+        );
         setIsSubmitting(false);
         return;
       }
