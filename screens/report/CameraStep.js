@@ -1,5 +1,9 @@
 import { Ionicons } from "@expo/vector-icons";
-import { CameraView, useCameraPermissions, useMicrophonePermissions } from "expo-camera";
+import {
+  CameraView,
+  useCameraPermissions,
+  useMicrophonePermissions,
+} from "expo-camera";
 import * as ImagePicker from "expo-image-picker";
 import { useState, useRef, useEffect } from "react";
 import {
@@ -18,7 +22,15 @@ import { useTheme } from "../../styles/ThemeContext";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
-export default function CameraStep({ media, setMedia, onNext, onSkip, onBack, editingFromReview }) {
+export default function CameraStep({
+  media,
+  setMedia,
+  onNext,
+  onSkip,
+  onCancel,
+  onBack,
+  editingFromReview,
+}) {
   const { colors, isDark } = useTheme();
   const [permission, requestPermission] = useCameraPermissions();
   const [micPermission, requestMicPermission] = useMicrophonePermissions();
@@ -27,9 +39,13 @@ export default function CameraStep({ media, setMedia, onNext, onSkip, onBack, ed
   const [isRecording, setIsRecording] = useState(false);
   const [isCameraReady, setIsCameraReady] = useState(false);
   const cameraRef = useRef(null);
-  
+
   // Toast notification state
-  const [toast, setToast] = useState({ visible: false, message: "", type: "error" });
+  const [toast, setToast] = useState({
+    visible: false,
+    message: "",
+    type: "error",
+  });
   const toastOpacity = useRef(new Animated.Value(0)).current;
   const toastTranslateY = useRef(new Animated.Value(-20)).current;
   const toastTimeoutRef = useRef(null);
@@ -44,10 +60,10 @@ export default function CameraStep({ media, setMedia, onNext, onSkip, onBack, ed
     // Reset animation values immediately
     toastOpacity.setValue(0);
     toastTranslateY.setValue(-20);
-    
+
     // Set toast state
     setToast({ visible: true, message, type });
-    
+
     // Animate in
     Animated.parallel([
       Animated.timing(toastOpacity, {
@@ -97,7 +113,7 @@ export default function CameraStep({ media, setMedia, onNext, onSkip, onBack, ed
 
   const handleTakePhoto = async () => {
     if (!cameraRef.current || !isCameraReady) return;
-    
+
     if (media.length >= 5) {
       showToast("Maximum 5 files allowed", "warning");
       return;
@@ -154,7 +170,7 @@ export default function CameraStep({ media, setMedia, onNext, onSkip, onBack, ed
   };
 
   const toggleCameraFacing = () => {
-    setFacing(current => current === "back" ? "front" : "back");
+    setFacing((current) => (current === "back" ? "front" : "back"));
   };
 
   // Permission not granted yet
@@ -171,10 +187,17 @@ export default function CameraStep({ media, setMedia, onNext, onSkip, onBack, ed
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
         <View style={styles.permissionContainer}>
-          <View style={[styles.permissionIcon, { backgroundColor: colors.primary + "20" }]}>
+          <View
+            style={[
+              styles.permissionIcon,
+              { backgroundColor: colors.primary + "20" },
+            ]}
+          >
             <Ionicons name="camera-outline" size={48} color={colors.primary} />
           </View>
-          <Text style={[styles.permissionTitle, { color: colors.text }]}>Camera Access Needed</Text>
+          <Text style={[styles.permissionTitle, { color: colors.text }]}>
+            Camera Access Needed
+          </Text>
           <Text style={[styles.permissionText, { color: colors.gray }]}>
             To capture photos or videos of incidents, we need camera access.
           </Text>
@@ -184,18 +207,39 @@ export default function CameraStep({ media, setMedia, onNext, onSkip, onBack, ed
           >
             <Text style={styles.permissionBtnText}>Grant Access</Text>
           </TouchableOpacity>
-          
+
           <View style={styles.alternativeSection}>
             <Text style={[styles.orText, { color: colors.gray }]}>— or —</Text>
             <TouchableOpacity
-              style={[styles.galleryBtn, { backgroundColor: isDark ? "#1e1e1e" : "#f8f9fa", borderColor: colors.border }]}
+              style={[
+                styles.galleryBtn,
+                {
+                  backgroundColor: isDark ? "#1e1e1e" : "#f8f9fa",
+                  borderColor: colors.border,
+                },
+              ]}
               onPress={handlePickFromGallery}
             >
-              <Ionicons name="images-outline" size={20} color={colors.primary} />
-              <Text style={[styles.galleryBtnText, { color: colors.text }]}>Choose from Gallery</Text>
+              <Ionicons
+                name="images-outline"
+                size={20}
+                color={colors.primary}
+              />
+              <Text style={[styles.galleryBtnText, { color: colors.text }]}>
+                Choose from Gallery
+              </Text>
             </TouchableOpacity>
+            {!editingFromReview && (
+              <TouchableOpacity onPress={onCancel}>
+                <Text style={[styles.skipText, { color: colors.primary }]}>
+                  Cancel and return home
+                </Text>
+              </TouchableOpacity>
+            )}
             <TouchableOpacity onPress={onSkip}>
-              <Text style={[styles.skipText, { color: colors.primary }]}>Skip this step →</Text>
+              <Text style={[styles.skipText, { color: colors.primary }]}>
+                Skip this step →
+              </Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -246,23 +290,32 @@ export default function CameraStep({ media, setMedia, onNext, onSkip, onBack, ed
     <View style={[styles.container, { backgroundColor: "#000" }]}>
       {/* Modern Toast Notification */}
       {toast.visible && (
-        <Animated.View 
+        <Animated.View
           style={[
             styles.toastContainer,
             {
               opacity: toastOpacity,
               transform: [{ translateY: toastTranslateY }],
-              backgroundColor: toast.type === "warning" ? "#f59e0b" : 
-                              toast.type === "success" ? "#10b981" : "#ef4444",
-            }
+              backgroundColor:
+                toast.type === "warning"
+                  ? "#f59e0b"
+                  : toast.type === "success"
+                  ? "#10b981"
+                  : "#ef4444",
+            },
           ]}
         >
           <View style={styles.toastContent}>
-            <Ionicons 
-              name={toast.type === "warning" ? "warning" : 
-                    toast.type === "success" ? "checkmark-circle" : "close-circle"} 
-              size={20} 
-              color="#fff" 
+            <Ionicons
+              name={
+                toast.type === "warning"
+                  ? "warning"
+                  : toast.type === "success"
+                  ? "checkmark-circle"
+                  : "close-circle"
+              }
+              size={20}
+              color="#fff"
             />
             <Text style={styles.toastText}>{toast.message}</Text>
           </View>
@@ -282,25 +335,48 @@ export default function CameraStep({ media, setMedia, onNext, onSkip, onBack, ed
       <View style={styles.overlay} pointerEvents="box-none">
         {/* Top Bar */}
         <View style={styles.topBar}>
-          <TouchableOpacity style={styles.topBtn} onPress={onSkip}>
-            <Ionicons name="close" size={28} color="#fff" />
-          </TouchableOpacity>
-          
+          {!editingFromReview && (
+            <TouchableOpacity style={styles.topBtn} onPress={onCancel}>
+              <Ionicons name="close" size={28} color="#fff" />
+            </TouchableOpacity>
+          )}
+          {editingFromReview && <View style={styles.topBtn} />}
+
           <View style={styles.modeToggle}>
             <TouchableOpacity
-              style={[styles.modeBtn, cameraMode === "picture" && styles.modeBtnActive]}
+              style={[
+                styles.modeBtn,
+                cameraMode === "picture" && styles.modeBtnActive,
+              ]}
               onPress={() => setCameraMode("picture")}
             >
-              <Text style={[styles.modeBtnText, cameraMode === "picture" && styles.modeBtnTextActive]}>Photo</Text>
+              <Text
+                style={[
+                  styles.modeBtnText,
+                  cameraMode === "picture" && styles.modeBtnTextActive,
+                ]}
+              >
+                Photo
+              </Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.modeBtn, cameraMode === "video" && styles.modeBtnActive]}
+              style={[
+                styles.modeBtn,
+                cameraMode === "video" && styles.modeBtnActive,
+              ]}
               onPress={() => setCameraMode("video")}
             >
-              <Text style={[styles.modeBtnText, cameraMode === "video" && styles.modeBtnTextActive]}>Video</Text>
+              <Text
+                style={[
+                  styles.modeBtnText,
+                  cameraMode === "video" && styles.modeBtnTextActive,
+                ]}
+              >
+                Video
+              </Text>
             </TouchableOpacity>
           </View>
-          
+
           <TouchableOpacity style={styles.topBtn} onPress={toggleCameraFacing}>
             <Ionicons name="camera-reverse-outline" size={26} color="#fff" />
           </TouchableOpacity>
@@ -316,13 +392,19 @@ export default function CameraStep({ media, setMedia, onNext, onSkip, onBack, ed
             >
               {media.map((item, index) => (
                 <View key={index} style={styles.thumbnail}>
-                  <Image source={{ uri: item.uri }} style={styles.thumbnailImage} />
+                  <Image
+                    source={{ uri: item.uri }}
+                    style={styles.thumbnailImage}
+                  />
                   {item.type === "video" && (
                     <View style={styles.videoOverlay}>
                       <Ionicons name="play" size={16} color="#fff" />
                     </View>
                   )}
-                  <TouchableOpacity style={styles.removeThumbnail} onPress={() => removeMedia(index)}>
+                  <TouchableOpacity
+                    style={styles.removeThumbnail}
+                    onPress={() => removeMedia(index)}
+                  >
                     <Ionicons name="close" size={12} color="#fff" />
                   </TouchableOpacity>
                 </View>
@@ -345,7 +427,10 @@ export default function CameraStep({ media, setMedia, onNext, onSkip, onBack, ed
         {/* Bottom Bar */}
         <View style={styles.bottomBar}>
           {/* Gallery Button */}
-          <TouchableOpacity style={styles.sideBtn} onPress={handlePickFromGallery}>
+          <TouchableOpacity
+            style={styles.sideBtn}
+            onPress={handlePickFromGallery}
+          >
             <View style={styles.galleryIcon}>
               <Ionicons name="images-outline" size={24} color="#fff" />
             </View>
@@ -369,22 +454,48 @@ export default function CameraStep({ media, setMedia, onNext, onSkip, onBack, ed
               onPress={isRecording ? handleStopRecording : handleStartRecording}
               disabled={!isCameraReady}
             >
-              <View style={[styles.captureOuter, isRecording && styles.recordingOuter]}>
-                <View style={[styles.captureInner, isRecording && styles.recordingInner]} />
+              <View
+                style={[
+                  styles.captureOuter,
+                  isRecording && styles.recordingOuter,
+                ]}
+              >
+                <View
+                  style={[
+                    styles.captureInner,
+                    isRecording && styles.recordingInner,
+                  ]}
+                />
               </View>
             </TouchableOpacity>
           )}
 
           {/* Next / Continue Button */}
           <TouchableOpacity
-            style={[styles.sideBtn, (media.length > 0 || editingFromReview) && styles.nextBtnActive]}
-            onPress={editingFromReview ? onNext : (media.length > 0 ? onNext : onSkip)}
+            style={[
+              styles.sideBtn,
+              (media.length > 0 || editingFromReview) && styles.nextBtnActive,
+            ]}
+            onPress={
+              editingFromReview ? onNext : media.length > 0 ? onNext : onSkip
+            }
           >
-            <View style={[styles.nextIcon, (media.length > 0 || editingFromReview) && { backgroundColor: "#10b981" }]}>
-              <Ionicons name={editingFromReview ? "checkmark" : "arrow-forward"} size={22} color="#fff" />
+            <View
+              style={[
+                styles.nextIcon,
+                (media.length > 0 || editingFromReview) && {
+                  backgroundColor: "#10b981",
+                },
+              ]}
+            >
+              <Ionicons
+                name={editingFromReview ? "checkmark" : "arrow-forward"}
+                size={22}
+                color="#fff"
+              />
             </View>
             <Text style={styles.nextText}>
-              {editingFromReview ? "Done" : (media.length > 0 ? "Next" : "Skip")}
+              {editingFromReview ? "Done" : media.length > 0 ? "Next" : "Skip"}
             </Text>
           </TouchableOpacity>
         </View>

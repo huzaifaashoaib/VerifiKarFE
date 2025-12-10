@@ -17,7 +17,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { API_BASE_URL } from "../config";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../styles/ThemeContext";
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation } from "@react-navigation/native";
 
 // Step components
 import CameraStep from "./report/CameraStep";
@@ -62,32 +62,46 @@ export default function ReportScreen() {
   useEffect(() => {
     const retryPendingReports = async () => {
       try {
-        const pendingReports = JSON.parse(await AsyncStorage.getItem("@verifikar_pending_reports") || "[]");
+        const pendingReports = JSON.parse(
+          (await AsyncStorage.getItem("@verifikar_pending_reports")) || "[]"
+        );
         if (pendingReports.length === 0) return;
-        
+
         setPendingCount(pendingReports.length);
-        
+
         const successfulIds = [];
-        
+
         for (const report of pendingReports) {
           try {
             const formData = new FormData();
             formData.append("raw_text", report.descriptionText);
             formData.append("location", JSON.stringify(report.locationData));
 
-            const images = report.mediaItems.filter((item) => item.type === "image");
-            const videos = report.mediaItems.filter((item) => item.type === "video");
+            const images = report.mediaItems.filter(
+              (item) => item.type === "image"
+            );
+            const videos = report.mediaItems.filter(
+              (item) => item.type === "video"
+            );
 
             images.forEach((image, index) => {
               const uriParts = image.uri.split(".");
               const fileType = uriParts[uriParts.length - 1];
-              formData.append("images", { uri: image.uri, name: `image_${index}.${fileType}`, type: `image/${fileType}` });
+              formData.append("images", {
+                uri: image.uri,
+                name: `image_${index}.${fileType}`,
+                type: `image/${fileType}`,
+              });
             });
 
             videos.forEach((video, index) => {
               const uriParts = video.uri.split(".");
               const fileType = uriParts[uriParts.length - 1];
-              formData.append("videos", { uri: video.uri, name: `video_${index}.${fileType}`, type: `video/${fileType}` });
+              formData.append("videos", {
+                uri: video.uri,
+                name: `video_${index}.${fileType}`,
+                type: `video/${fileType}`,
+              });
             });
 
             const response = await fetch(`${API_BASE_URL}/reports/submit`, {
@@ -105,8 +119,13 @@ export default function ReportScreen() {
         }
 
         if (successfulIds.length > 0) {
-          const remaining = pendingReports.filter(r => !successfulIds.includes(r.id));
-          await AsyncStorage.setItem("@verifikar_pending_reports", JSON.stringify(remaining));
+          const remaining = pendingReports.filter(
+            (r) => !successfulIds.includes(r.id)
+          );
+          await AsyncStorage.setItem(
+            "@verifikar_pending_reports",
+            JSON.stringify(remaining)
+          );
           setPendingCount(remaining.length);
         }
       } catch (error) {
@@ -152,7 +171,7 @@ export default function ReportScreen() {
   const submitReportInBackground = async (reportData) => {
     try {
       const { token, locationData, descriptionText, mediaItems } = reportData;
-      
+
       const formData = new FormData();
       formData.append("raw_text", descriptionText);
       formData.append("location", JSON.stringify(locationData));
@@ -163,13 +182,21 @@ export default function ReportScreen() {
       images.forEach((image, index) => {
         const uriParts = image.uri.split(".");
         const fileType = uriParts[uriParts.length - 1];
-        formData.append("images", { uri: image.uri, name: `image_${index}.${fileType}`, type: `image/${fileType}` });
+        formData.append("images", {
+          uri: image.uri,
+          name: `image_${index}.${fileType}`,
+          type: `image/${fileType}`,
+        });
       });
 
       videos.forEach((video, index) => {
         const uriParts = video.uri.split(".");
         const fileType = uriParts[uriParts.length - 1];
-        formData.append("videos", { uri: video.uri, name: `video_${index}.${fileType}`, type: `video/${fileType}` });
+        formData.append("videos", {
+          uri: video.uri,
+          name: `video_${index}.${fileType}`,
+          type: `video/${fileType}`,
+        });
       });
 
       const response = await fetch(`${API_BASE_URL}/reports/submit`, {
@@ -182,34 +209,44 @@ export default function ReportScreen() {
 
       if (!response.ok) {
         // Store failed report for retry
-        const pendingReports = JSON.parse(await AsyncStorage.getItem("@verifikar_pending_reports") || "[]");
+        const pendingReports = JSON.parse(
+          (await AsyncStorage.getItem("@verifikar_pending_reports")) || "[]"
+        );
         pendingReports.push({
           id: Date.now(),
           ...reportData,
           failedAt: new Date().toISOString(),
           error: data.detail?.message || "Submission failed",
         });
-        await AsyncStorage.setItem("@verifikar_pending_reports", JSON.stringify(pendingReports));
-        
+        await AsyncStorage.setItem(
+          "@verifikar_pending_reports",
+          JSON.stringify(pendingReports)
+        );
+
         Alert.alert(
-          "Submission Queued", 
+          "Submission Queued",
           "Your report was saved and will be submitted when connection improves.",
           [{ text: "OK" }]
         );
       }
     } catch (error) {
       // Store for retry on network failure
-      const pendingReports = JSON.parse(await AsyncStorage.getItem("@verifikar_pending_reports") || "[]");
+      const pendingReports = JSON.parse(
+        (await AsyncStorage.getItem("@verifikar_pending_reports")) || "[]"
+      );
       pendingReports.push({
         id: Date.now(),
         ...reportData,
         failedAt: new Date().toISOString(),
         error: "Network error",
       });
-      await AsyncStorage.setItem("@verifikar_pending_reports", JSON.stringify(pendingReports));
-      
+      await AsyncStorage.setItem(
+        "@verifikar_pending_reports",
+        JSON.stringify(pendingReports)
+      );
+
       Alert.alert(
-        "Saved Offline", 
+        "Saved Offline",
         "Your report was saved and will be submitted when you're back online.",
         [{ text: "OK" }]
       );
@@ -220,7 +257,10 @@ export default function ReportScreen() {
   const handleSubmit = () => {
     // Validate
     if (!description.trim()) {
-      Alert.alert("Missing Information", "Please add a description of what happened.");
+      Alert.alert(
+        "Missing Information",
+        "Please add a description of what happened."
+      );
       goToStep(STEPS.DESCRIPTION);
       return;
     }
@@ -235,7 +275,7 @@ export default function ReportScreen() {
   // Confirm submit - PRESERVED LOGIC FROM ORIGINAL
   const confirmSubmit = async () => {
     setShowConfirmModal(false);
-    
+
     // Validate token first
     const token = await AsyncStorage.getItem("authToken");
     if (!token) {
@@ -246,14 +286,23 @@ export default function ReportScreen() {
     // Validate location data
     let locationData;
     if (selectedCoordinates) {
-      locationData = { lat: selectedCoordinates.latitude, lon: selectedCoordinates.longitude };
+      locationData = {
+        lat: selectedCoordinates.latitude,
+        lon: selectedCoordinates.longitude,
+      };
     } else {
       try {
         const results = await Location.geocodeAsync(location);
         if (results && results.length > 0) {
-          locationData = { lat: results[0].latitude, lon: results[0].longitude };
+          locationData = {
+            lat: results[0].latitude,
+            lon: results[0].longitude,
+          };
         } else {
-          Alert.alert("Location Issue", "Please select a location using the map.");
+          Alert.alert(
+            "Location Issue",
+            "Please select a location using the map."
+          );
           return;
         }
       } catch (error) {
@@ -284,6 +333,16 @@ export default function ReportScreen() {
     submitReportInBackground(reportData);
   };
 
+  // Handle skip camera step
+  const handleSkipCamera = () => {
+    goToStep(STEPS.DESCRIPTION);
+  };
+
+  // Handle cancel report (navigate to home)
+  const handleCancelReport = () => {
+    navigation.navigate("Home");
+  };
+
   // Render current step
   const renderStep = () => {
     switch (currentStep) {
@@ -293,6 +352,8 @@ export default function ReportScreen() {
             media={media}
             setMedia={setMedia}
             onNext={nextStep}
+            onSkip={handleSkipCamera}
+            onCancel={handleCancelReport}
             onBack={editingFromReview ? prevStep : null}
             editingFromReview={editingFromReview}
           />
@@ -350,16 +411,26 @@ export default function ReportScreen() {
   const stepLabels = ["Camera", "Details", "Location", "Review"];
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+    <SafeAreaView
+      style={[styles.container, { backgroundColor: colors.background }]}
+    >
       <StatusBar barStyle={isDark ? "light-content" : "dark-content"} />
-      
+
       {/* Step Indicator - Only show on non-camera steps */}
       {currentStep !== STEPS.CAMERA && (
-        <View style={[styles.stepIndicator, { backgroundColor: colors.background, borderBottomColor: colors.border }]}>
+        <View
+          style={[
+            styles.stepIndicator,
+            {
+              backgroundColor: colors.background,
+              borderBottomColor: colors.border,
+            },
+          ]}
+        >
           <View style={styles.stepRow}>
             {[0, 1, 2, 3].map((step) => (
-              <TouchableOpacity 
-                key={step} 
+              <TouchableOpacity
+                key={step}
                 style={styles.stepItem}
                 onPress={() => {
                   // Allow going back to previous steps
@@ -369,42 +440,50 @@ export default function ReportScreen() {
                 }}
                 disabled={step > currentStep}
               >
-                <View style={[
-                  styles.stepDot,
-                  { 
-                    backgroundColor: step <= currentStep ? colors.primary : colors.border,
-                    opacity: step > currentStep ? 0.5 : 1,
-                  }
-                ]}>
+                <View
+                  style={[
+                    styles.stepDot,
+                    {
+                      backgroundColor:
+                        step <= currentStep ? colors.primary : colors.border,
+                      opacity: step > currentStep ? 0.5 : 1,
+                    },
+                  ]}
+                >
                   {step < currentStep ? (
                     <Ionicons name="checkmark" size={12} color="#fff" />
                   ) : (
                     <Text style={styles.stepDotText}>{step + 1}</Text>
                   )}
                 </View>
-                <Text style={[
-                  styles.stepLabel, 
-                  { 
-                    color: step === currentStep ? colors.primary : colors.gray,
-                    fontWeight: step === currentStep ? "600" : "400",
-                  }
-                ]}>
+                <Text
+                  style={[
+                    styles.stepLabel,
+                    {
+                      color:
+                        step === currentStep ? colors.primary : colors.gray,
+                      fontWeight: step === currentStep ? "600" : "400",
+                    },
+                  ]}
+                >
                   {stepLabels[step]}
                 </Text>
               </TouchableOpacity>
             ))}
           </View>
-          
+
           {/* Progress bar */}
-          <View style={[styles.progressBar, { backgroundColor: colors.border }]}>
-            <View 
+          <View
+            style={[styles.progressBar, { backgroundColor: colors.border }]}
+          >
+            <View
               style={[
-                styles.progressFill, 
-                { 
+                styles.progressFill,
+                {
                   backgroundColor: colors.primary,
-                  width: `${((currentStep + 1) / 4) * 100}%`
-                }
-              ]} 
+                  width: `${((currentStep + 1) / 4) * 100}%`,
+                },
+              ]}
             />
           </View>
         </View>
@@ -412,44 +491,77 @@ export default function ReportScreen() {
 
       {/* Pending Reports Indicator */}
       {pendingCount > 0 && currentStep !== STEPS.CAMERA && (
-        <View style={[styles.pendingBanner, { backgroundColor: isDark ? "rgba(251, 191, 36, 0.15)" : "rgba(251, 191, 36, 0.1)" }]}>
+        <View
+          style={[
+            styles.pendingBanner,
+            {
+              backgroundColor: isDark
+                ? "rgba(251, 191, 36, 0.15)"
+                : "rgba(251, 191, 36, 0.1)",
+            },
+          ]}
+        >
           <Ionicons name="cloud-upload-outline" size={18} color="#f59e0b" />
           <Text style={[styles.pendingText, { color: colors.text }]}>
-            {pendingCount} report{pendingCount > 1 ? 's' : ''} uploading in background
+            {pendingCount} report{pendingCount > 1 ? "s" : ""} uploading in
+            background
           </Text>
         </View>
       )}
 
       {/* Current Step Content */}
-      <View style={styles.stepContent}>
-        {renderStep()}
-      </View>
+      <View style={styles.stepContent}>{renderStep()}</View>
 
       {/* ============ MODALS (PRESERVED FROM ORIGINAL) ============ */}
 
       {/* Confirmation Modal */}
-      <Modal visible={showConfirmModal} transparent={true} animationType="fade" onRequestClose={() => setShowConfirmModal(false)}>
+      <Modal
+        visible={showConfirmModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowConfirmModal(false)}
+      >
         <View style={styles.modalOverlay}>
           <View style={[styles.modalCard, { backgroundColor: colors.surface }]}>
-            <View style={[styles.modalIcon, { backgroundColor: colors.primary + "15" }]}>
+            <View
+              style={[
+                styles.modalIcon,
+                { backgroundColor: colors.primary + "15" },
+              ]}
+            >
               <Ionicons name="send" size={32} color={colors.primary} />
             </View>
 
-            <Text style={[styles.modalTitle, { color: colors.text }]}>Ready to submit?</Text>
+            <Text style={[styles.modalTitle, { color: colors.text }]}>
+              Ready to submit?
+            </Text>
             <Text style={[styles.modalText, { color: colors.gray }]}>
               Your anonymous report will help keep the community informed.
             </Text>
 
             <View style={styles.modalButtons}>
               <TouchableOpacity
-                style={[styles.modalBtnSecondary, { backgroundColor: isDark ? "#2a2a2a" : "#f5f5f5" }]}
+                style={[
+                  styles.modalBtnSecondary,
+                  { backgroundColor: isDark ? "#2a2a2a" : "#f5f5f5" },
+                ]}
                 onPress={() => setShowConfirmModal(false)}
               >
-                <Text style={[styles.modalBtnText, { color: colors.text }]}>Go Back</Text>
+                <Text style={[styles.modalBtnText, { color: colors.text }]}>
+                  Go Back
+                </Text>
               </TouchableOpacity>
 
-              <TouchableOpacity style={[styles.modalBtnPrimary, { backgroundColor: colors.primary }]} onPress={confirmSubmit}>
-                <Text style={[styles.modalBtnText, { color: "#fff" }]}>Submit</Text>
+              <TouchableOpacity
+                style={[
+                  styles.modalBtnPrimary,
+                  { backgroundColor: colors.primary },
+                ]}
+                onPress={confirmSubmit}
+              >
+                <Text style={[styles.modalBtnText, { color: "#fff" }]}>
+                  Submit
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -457,23 +569,33 @@ export default function ReportScreen() {
       </Modal>
 
       {/* Success Modal */}
-      <Modal visible={showSuccessModal} transparent={true} animationType="fade" statusBarTranslucent={true}>
+      <Modal
+        visible={showSuccessModal}
+        transparent={true}
+        animationType="fade"
+        statusBarTranslucent={true}
+      >
         <View style={styles.modalOverlay}>
-          <View style={[styles.successCard, { backgroundColor: colors.surface }]}>
+          <View
+            style={[styles.successCard, { backgroundColor: colors.surface }]}
+          >
             <View style={styles.successIcon}>
               <Ionicons name="checkmark" size={40} color="#fff" />
             </View>
 
-            <Text style={[styles.successTitle, { color: colors.text }]}>Thank You!</Text>
+            <Text style={[styles.successTitle, { color: colors.text }]}>
+              Thank You!
+            </Text>
             <Text style={[styles.successText, { color: colors.gray }]}>
-              Your report is being submitted in the background. It will be reviewed and shared to help keep our community informed.
+              Your report is being submitted in the background. It will be
+              reviewed and shared to help keep our community informed.
             </Text>
 
             <TouchableOpacity
               style={[styles.successBtn, { backgroundColor: colors.primary }]}
               onPress={() => {
                 setShowSuccessModal(false);
-                navigation.navigate('Home');
+                navigation.navigate("Home");
               }}
             >
               <Text style={styles.successBtnText}>Done</Text>
