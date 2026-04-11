@@ -69,6 +69,11 @@ export default function ReportScreen() {
 
         setPendingCount(pendingReports.length);
 
+        const latestToken = await AsyncStorage.getItem("authToken");
+        if (!latestToken) {
+          return;
+        }
+
         const successfulIds = [];
 
         for (const report of pendingReports) {
@@ -106,7 +111,7 @@ export default function ReportScreen() {
 
             const response = await fetch(`${API_BASE_URL}/reports/submit`, {
               method: "POST",
-              headers: { Authorization: `Bearer ${report.token}` },
+              headers: { Authorization: `Bearer ${latestToken}` },
               body: formData,
             });
 
@@ -170,7 +175,9 @@ export default function ReportScreen() {
   // Background submit function - PRESERVED FROM ORIGINAL
   const submitReportInBackground = async (reportData) => {
     try {
-      const { token, locationData, descriptionText, mediaItems } = reportData;
+      const { locationData, descriptionText, mediaItems } = reportData;
+
+      const currentToken = await AsyncStorage.getItem("authToken");
 
       const formData = new FormData();
       formData.append("raw_text", descriptionText);
@@ -201,13 +208,37 @@ export default function ReportScreen() {
 
       const response = await fetch(`${API_BASE_URL}/reports/submit`, {
         method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
+        headers: currentToken ? { Authorization: `Bearer ${currentToken}` } : {},
         body: formData,
       });
 
       const data = await response.json();
 
       if (!response.ok) {
+        if (response.status === 401) {
+          const pendingReports = JSON.parse(
+            (await AsyncStorage.getItem("@verifikar_pending_reports")) || "[]"
+          );
+          pendingReports.push({
+            id: Date.now(),
+            ...reportData,
+            failedAt: new Date().toISOString(),
+            error: "Authentication required",
+          });
+          await AsyncStorage.setItem(
+            "@verifikar_pending_reports",
+            JSON.stringify(pendingReports)
+          );
+          setPendingCount(pendingReports.length);
+
+          Alert.alert(
+            "Session Expired",
+            "Your report is saved. Please sign in again and it will retry automatically.",
+            [{ text: "OK" }]
+          );
+          return;
+        }
+
         // Store failed report for retry
         const pendingReports = JSON.parse(
           (await AsyncStorage.getItem("@verifikar_pending_reports")) || "[]"
@@ -222,6 +253,7 @@ export default function ReportScreen() {
           "@verifikar_pending_reports",
           JSON.stringify(pendingReports)
         );
+        setPendingCount(pendingReports.length);
 
         Alert.alert(
           "Submission Queued",
@@ -244,6 +276,7 @@ export default function ReportScreen() {
         "@verifikar_pending_reports",
         JSON.stringify(pendingReports)
       );
+      setPendingCount(pendingReports.length);
 
       Alert.alert(
         "Saved Offline",
@@ -313,7 +346,6 @@ export default function ReportScreen() {
 
     // Capture current form data for background submission
     const reportData = {
-      token,
       locationData,
       descriptionText: description,
       mediaItems: [...media],

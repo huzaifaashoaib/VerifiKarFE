@@ -1,15 +1,30 @@
-import { Ionicons } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useVideoPlayer, VideoView } from 'expo-video';
-import * as VideoThumbnails from 'expo-video-thumbnails';
-import * as Location from 'expo-location';
-import { useEffect, useState, useCallback, useRef, memo } from 'react';
-import { ActivityIndicator, Alert, Animated, Dimensions, FlatList, Image, Modal, Pressable, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { API_BASE_URL } from '../config';
-import { useFilters } from '../context/FilterContext';
-import { useTheme } from '../styles/ThemeContext';
+import { Ionicons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useNavigation } from "@react-navigation/native";
+import * as Location from "expo-location";
+import { useVideoPlayer, VideoView } from "expo-video";
+import * as VideoThumbnails from "expo-video-thumbnails";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
+import {
+    ActivityIndicator,
+    Alert,
+    Animated,
+    Dimensions,
+    FlatList,
+    Image,
+    Modal,
+    Pressable,
+    RefreshControl,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
+} from "react-native";
+import { API_BASE_URL } from "../config";
+import { useFilters } from "../context/FilterContext";
+import { useTheme } from "../styles/ThemeContext";
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
 // ============ API FUNCTIONS ============
 
@@ -22,55 +37,70 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 async function interactWithPost(postId, interactionType) {
   // Get all stored keys for debugging
   const allKeys = await AsyncStorage.getAllKeys();
-  console.log('[InteractWithPost] All AsyncStorage keys:', allKeys);
-  
-  let token = await AsyncStorage.getItem('authToken');
-  
-  console.log('[InteractWithPost] Raw token value:', token ? `"${token}"` : 'null');
-  console.log('[InteractWithPost] Token type:', typeof token);
-  console.log('[InteractWithPost] Token length:', token ? token.length : 0);
-  
+  console.log("[InteractWithPost] All AsyncStorage keys:", allKeys);
+
+  let token = await AsyncStorage.getItem("authToken");
+
+  console.log(
+    "[InteractWithPost] Raw token value:",
+    token ? `"${token}"` : "null",
+  );
+  console.log("[InteractWithPost] Token type:", typeof token);
+  console.log("[InteractWithPost] Token length:", token ? token.length : 0);
+
   // Also check for alternate key names (in case of inconsistency)
-  const altToken = await AsyncStorage.getItem('token');
-  console.log('[InteractWithPost] Alt token (key: "token"):', altToken ? 'exists' : 'null');
-  
+  const altToken = await AsyncStorage.getItem("token");
+  console.log(
+    '[InteractWithPost] Alt token (key: "token"):',
+    altToken ? "exists" : "null",
+  );
+
   // Clean up token (remove any whitespace/newlines)
   if (token) {
     token = token.trim();
   }
-  
+
   if (!token) {
-    console.log('[InteractWithPost] ERROR: No token found in AsyncStorage!');
-    throw new Error('Authentication required. Please log in again.');
+    console.log("[InteractWithPost] ERROR: No token found in AsyncStorage!");
+    throw new Error("Authentication required. Please log in again.");
   }
 
   const headers = {
-    'Content-Type': 'application/json',
-    'Authorization': `Bearer ${token}`,
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${token}`,
   };
-  
-  console.log(`[InteractWithPost] POST ${API_BASE_URL}/posts/${postId}/interact`);
-  console.log('[InteractWithPost] Auth header:', `Bearer ${token.substring(0, 20)}...`);
+
+  console.log(
+    `[InteractWithPost] POST ${API_BASE_URL}/posts/${postId}/interact`,
+  );
+  console.log(
+    "[InteractWithPost] Auth header:",
+    `Bearer ${token.substring(0, 20)}...`,
+  );
 
   const response = await fetch(`${API_BASE_URL}/posts/${postId}/interact`, {
-    method: 'POST',
+    method: "POST",
     headers: headers,
     body: JSON.stringify({ interaction_type: interactionType }),
   });
 
   const data = await response.json().catch(() => null);
-  console.log('[InteractWithPost] Response status:', response.status);
-  console.log('[InteractWithPost] Response data:', JSON.stringify(data, null, 2));
+  console.log("[InteractWithPost] Response status:", response.status);
+  console.log(
+    "[InteractWithPost] Response data:",
+    JSON.stringify(data, null, 2),
+  );
 
   if (!response.ok) {
     // Handle structured error responses from backend
     let errorMessage = `Failed to ${interactionType} post`;
-    
+
     // Check for expired token (401 Unauthorized)
     if (response.status === 401) {
-      errorMessage = 'Your session has expired. Please log out and log back in.';
+      errorMessage =
+        "Your session has expired. Please log out and log back in.";
     } else if (data?.detail) {
-      if (typeof data.detail === 'string') {
+      if (typeof data.detail === "string") {
         errorMessage = data.detail;
       } else if (data.detail?.details?.message) {
         errorMessage = data.detail.details.message;
@@ -88,256 +118,265 @@ async function interactWithPost(postId, interactionType) {
  * Reddit-style voting component with optimistic updates
  * Allows rapid interactions without blocking UI
  */
-const PostInteractions = memo(({ 
-  postId, 
-  initialUpvotes = 0, 
-  initialDownvotes = 0, 
-  initialFlags = 0,
-  initialUserVote = null, // 'upvote' | 'downvote' | null
-  initialUserFlagged = false,
-  colors,
-  onInteractionError,
-}) => {
-  // Local state
-  const [isUpvoted, setIsUpvoted] = useState(initialUserVote === 'upvote');
-  const [isDownvoted, setIsDownvoted] = useState(initialUserVote === 'downvote');
-  const [isFlagged, setIsFlagged] = useState(initialUserFlagged);
-  const [upvotes, setUpvotes] = useState(initialUpvotes);
-  const [downvotes, setDownvotes] = useState(initialDownvotes);
-  const [flags, setFlags] = useState(initialFlags);
+const PostInteractions = memo(
+  ({
+    postId,
+    initialUpvotes = 0,
+    initialDownvotes = 0,
+    initialFlags = 0,
+    initialUserVote = null, // 'upvote' | 'downvote' | null
+    initialUserFlagged = false,
+    colors,
+    onInteractionError,
+    onCommentPress,
+  }) => {
+    // Local state
+    const [isUpvoted, setIsUpvoted] = useState(initialUserVote === "upvote");
+    const [isDownvoted, setIsDownvoted] = useState(
+      initialUserVote === "downvote",
+    );
+    const [isFlagged, setIsFlagged] = useState(initialUserFlagged);
+    const [upvotes, setUpvotes] = useState(initialUpvotes);
+    const [downvotes, setDownvotes] = useState(initialDownvotes);
+    const [flags, setFlags] = useState(initialFlags);
 
-  // Request tracking to handle stale responses
-  const requestIdRef = useRef(0);
-  const pendingRequestRef = useRef(null);
+    // Request tracking to handle stale responses
+    const requestIdRef = useRef(0);
+    const pendingRequestRef = useRef(null);
 
-  // Animation for button press feedback
-  const upvoteScale = useRef(new Animated.Value(1)).current;
-  const downvoteScale = useRef(new Animated.Value(1)).current;
-  const flagScale = useRef(new Animated.Value(1)).current;
+    // Animation for button press feedback
+    const upvoteScale = useRef(new Animated.Value(1)).current;
+    const downvoteScale = useRef(new Animated.Value(1)).current;
+    const flagScale = useRef(new Animated.Value(1)).current;
 
-  const animatePress = (scaleValue) => {
-    Animated.sequence([
-      Animated.timing(scaleValue, {
-        toValue: 0.85,
-        duration: 100,
-        useNativeDriver: true,
-      }),
-      Animated.timing(scaleValue, {
-        toValue: 1,
-        duration: 100,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  };
+    const animatePress = (scaleValue) => {
+      Animated.sequence([
+        Animated.timing(scaleValue, {
+          toValue: 0.85,
+          duration: 100,
+          useNativeDriver: true,
+        }),
+        Animated.timing(scaleValue, {
+          toValue: 1,
+          duration: 100,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    };
 
-  const handleUpvote = async () => {
-    animatePress(upvoteScale);
-    
-    // Increment request ID to track this specific request
-    const currentRequestId = ++requestIdRef.current;
-    
-    // Store previous state for rollback
-    const prevUpvoted = isUpvoted;
-    const prevDownvoted = isDownvoted;
-    const prevUpvotes = upvotes;
-    const prevDownvotes = downvotes;
+    const handleUpvote = async () => {
+      animatePress(upvoteScale);
 
-    // Optimistic update - toggle behavior
-    if (isUpvoted) {
-      // Already upvoted, remove upvote
-      setIsUpvoted(false);
-      setUpvotes(prev => Math.max(0, prev - 1));
-    } else {
-      // Add upvote
-      setIsUpvoted(true);
-      setUpvotes(prev => prev + 1);
-      // If was downvoted, remove downvote
-      if (isDownvoted) {
-        setIsDownvoted(false);
-        setDownvotes(prev => Math.max(0, prev - 1));
-      }
-    }
+      // Increment request ID to track this specific request
+      const currentRequestId = ++requestIdRef.current;
 
-    try {
-      const response = await interactWithPost(postId, 'upvote');
-      
-      // Only apply server response if this is still the latest request
-      if (currentRequestId === requestIdRef.current && response.success) {
-        setUpvotes(response.details.new_upvotes);
-        setDownvotes(response.details.new_downvotes);
-        setFlags(response.details.new_flags);
-      }
-    } catch (error) {
-      // Only rollback if this is still the latest request
-      if (currentRequestId === requestIdRef.current) {
-        setIsUpvoted(prevUpvoted);
-        setIsDownvoted(prevDownvoted);
-        setUpvotes(prevUpvotes);
-        setDownvotes(prevDownvotes);
-        onInteractionError?.(error.message);
-      }
-    }
-  };
+      // Store previous state for rollback
+      const prevUpvoted = isUpvoted;
+      const prevDownvoted = isDownvoted;
+      const prevUpvotes = upvotes;
+      const prevDownvotes = downvotes;
 
-  const handleDownvote = async () => {
-    animatePress(downvoteScale);
-    
-    // Increment request ID to track this specific request
-    const currentRequestId = ++requestIdRef.current;
-    
-    // Store previous state for rollback
-    const prevUpvoted = isUpvoted;
-    const prevDownvoted = isDownvoted;
-    const prevUpvotes = upvotes;
-    const prevDownvotes = downvotes;
-
-    // Optimistic update - toggle behavior
-    if (isDownvoted) {
-      // Already downvoted, remove downvote
-      setIsDownvoted(false);
-      setDownvotes(prev => Math.max(0, prev - 1));
-    } else {
-      // Add downvote
-      setIsDownvoted(true);
-      setDownvotes(prev => prev + 1);
-      // If was upvoted, remove upvote
+      // Optimistic update - toggle behavior
       if (isUpvoted) {
+        // Already upvoted, remove upvote
         setIsUpvoted(false);
-        setUpvotes(prev => Math.max(0, prev - 1));
+        setUpvotes((prev) => Math.max(0, prev - 1));
+      } else {
+        // Add upvote
+        setIsUpvoted(true);
+        setUpvotes((prev) => prev + 1);
+        // If was downvoted, remove downvote
+        if (isDownvoted) {
+          setIsDownvoted(false);
+          setDownvotes((prev) => Math.max(0, prev - 1));
+        }
       }
-    }
 
-    try {
-      const response = await interactWithPost(postId, 'downvote');
-      
-      // Only apply server response if this is still the latest request
-      if (currentRequestId === requestIdRef.current && response.success) {
-        setUpvotes(response.details.new_upvotes);
-        setDownvotes(response.details.new_downvotes);
-        setFlags(response.details.new_flags);
+      try {
+        const response = await interactWithPost(postId, "upvote");
+
+        // Only apply server response if this is still the latest request
+        if (currentRequestId === requestIdRef.current && response.success) {
+          setUpvotes(response.details.new_upvotes);
+          setDownvotes(response.details.new_downvotes);
+          setFlags(response.details.new_flags);
+        }
+      } catch (error) {
+        // Only rollback if this is still the latest request
+        if (currentRequestId === requestIdRef.current) {
+          setIsUpvoted(prevUpvoted);
+          setIsDownvoted(prevDownvoted);
+          setUpvotes(prevUpvotes);
+          setDownvotes(prevDownvotes);
+          onInteractionError?.(error.message);
+        }
       }
-    } catch (error) {
-      // Only rollback if this is still the latest request
-      if (currentRequestId === requestIdRef.current) {
-        setIsUpvoted(prevUpvoted);
-        setIsDownvoted(prevDownvoted);
-        setUpvotes(prevUpvotes);
-        setDownvotes(prevDownvotes);
-        onInteractionError?.(error.message);
+    };
+
+    const handleDownvote = async () => {
+      animatePress(downvoteScale);
+
+      // Increment request ID to track this specific request
+      const currentRequestId = ++requestIdRef.current;
+
+      // Store previous state for rollback
+      const prevUpvoted = isUpvoted;
+      const prevDownvoted = isDownvoted;
+      const prevUpvotes = upvotes;
+      const prevDownvotes = downvotes;
+
+      // Optimistic update - toggle behavior
+      if (isDownvoted) {
+        // Already downvoted, remove downvote
+        setIsDownvoted(false);
+        setDownvotes((prev) => Math.max(0, prev - 1));
+      } else {
+        // Add downvote
+        setIsDownvoted(true);
+        setDownvotes((prev) => prev + 1);
+        // If was upvoted, remove upvote
+        if (isUpvoted) {
+          setIsUpvoted(false);
+          setUpvotes((prev) => Math.max(0, prev - 1));
+        }
       }
-    }
-  };
 
-  const handleFlag = async () => {
-    animatePress(flagScale);
-    
-    // Increment request ID to track this specific request
-    const currentRequestId = ++requestIdRef.current;
-    
-    // Store previous state for rollback
-    const prevFlagged = isFlagged;
-    const prevFlags = flags;
+      try {
+        const response = await interactWithPost(postId, "downvote");
 
-    // Optimistic update (flag is independent of votes)
-    if (isFlagged) {
-      setIsFlagged(false);
-      setFlags(prev => Math.max(0, prev - 1));
-    } else {
-      setIsFlagged(true);
-      setFlags(prev => prev + 1);
-    }
-
-    try {
-      const response = await interactWithPost(postId, 'flag');
-      
-      // Only apply server response if this is still the latest request
-      if (currentRequestId === requestIdRef.current && response.success) {
-        setUpvotes(response.details.new_upvotes);
-        setDownvotes(response.details.new_downvotes);
-        setFlags(response.details.new_flags);
+        // Only apply server response if this is still the latest request
+        if (currentRequestId === requestIdRef.current && response.success) {
+          setUpvotes(response.details.new_upvotes);
+          setDownvotes(response.details.new_downvotes);
+          setFlags(response.details.new_flags);
+        }
+      } catch (error) {
+        // Only rollback if this is still the latest request
+        if (currentRequestId === requestIdRef.current) {
+          setIsUpvoted(prevUpvoted);
+          setIsDownvoted(prevDownvoted);
+          setUpvotes(prevUpvotes);
+          setDownvotes(prevDownvotes);
+          onInteractionError?.(error.message);
+        }
       }
-    } catch (error) {
-      // Only rollback if this is still the latest request
-      if (currentRequestId === requestIdRef.current) {
-        setIsFlagged(prevFlagged);
-        setFlags(prevFlags);
-        onInteractionError?.(error.message);
+    };
+
+    const handleFlag = async () => {
+      animatePress(flagScale);
+
+      // Increment request ID to track this specific request
+      const currentRequestId = ++requestIdRef.current;
+
+      // Store previous state for rollback
+      const prevFlagged = isFlagged;
+      const prevFlags = flags;
+
+      // Optimistic update (flag is independent of votes)
+      if (isFlagged) {
+        setIsFlagged(false);
+        setFlags((prev) => Math.max(0, prev - 1));
+      } else {
+        setIsFlagged(true);
+        setFlags((prev) => prev + 1);
       }
-    }
-  };
 
-  // Colors for active states
-  const upvoteColor = isUpvoted ? '#00BA7C' : colors.gray; // Green when active
-  const downvoteColor = isDownvoted ? '#F91880' : colors.gray; // Pink when active
-  const flagColor = isFlagged ? '#EF4444' : colors.gray; // Red when active
+      try {
+        const response = await interactWithPost(postId, "flag");
 
-  // Format count like Twitter (1K, 1M, etc.)
-  const formatCount = (count) => {
-    if (count >= 1000000) return `${(count / 1000000).toFixed(1)}M`;
-    if (count >= 1000) return `${(count / 1000).toFixed(1)}K`;
-    return count > 0 ? count.toString() : '';
-  };
+        // Only apply server response if this is still the latest request
+        if (currentRequestId === requestIdRef.current && response.success) {
+          setUpvotes(response.details.new_upvotes);
+          setDownvotes(response.details.new_downvotes);
+          setFlags(response.details.new_flags);
+        }
+      } catch (error) {
+        // Only rollback if this is still the latest request
+        if (currentRequestId === requestIdRef.current) {
+          setIsFlagged(prevFlagged);
+          setFlags(prevFlags);
+          onInteractionError?.(error.message);
+        }
+      }
+    };
 
-  return (
-    <View style={twitterStyles.actionBar}>
-      {/* Upvote Button */}
-      <Animated.View style={{ transform: [{ scale: upvoteScale }] }}>
-        <TouchableOpacity 
-          style={twitterStyles.actionButton} 
-          onPress={handleUpvote}
+    // Colors for active states
+    const upvoteColor = isUpvoted ? "#00BA7C" : colors.gray; // Green when active
+    const downvoteColor = isDownvoted ? "#F91880" : colors.gray; // Pink when active
+    const flagColor = isFlagged ? "#EF4444" : colors.gray; // Red when active
+
+    // Format count like Twitter (1K, 1M, etc.)
+    const formatCount = (count) => {
+      if (count >= 1000000) return `${(count / 1000000).toFixed(1)}M`;
+      if (count >= 1000) return `${(count / 1000).toFixed(1)}K`;
+      return count > 0 ? count.toString() : "";
+    };
+
+    return (
+      <View style={twitterStyles.actionBar}>
+        {/* Upvote Button */}
+        <Animated.View style={{ transform: [{ scale: upvoteScale }] }}>
+          <TouchableOpacity
+            style={twitterStyles.actionButton}
+            onPress={handleUpvote}
+            activeOpacity={0.6}
+          >
+            <Ionicons
+              name={isUpvoted ? "thumbs-up" : "thumbs-up-outline"}
+              size={20}
+              color={upvoteColor}
+            />
+            <Text style={[twitterStyles.actionCount, { color: upvoteColor }]}>
+              {formatCount(upvotes)}
+            </Text>
+          </TouchableOpacity>
+        </Animated.View>
+
+        {/* Downvote Button */}
+        <Animated.View style={{ transform: [{ scale: downvoteScale }] }}>
+          <TouchableOpacity
+            style={twitterStyles.actionButton}
+            onPress={handleDownvote}
+            activeOpacity={0.6}
+          >
+            <Ionicons
+              name={isDownvoted ? "thumbs-down" : "thumbs-down-outline"}
+              size={20}
+              color={downvoteColor}
+            />
+            <Text style={[twitterStyles.actionCount, { color: downvoteColor }]}>
+              {formatCount(downvotes)}
+            </Text>
+          </TouchableOpacity>
+        </Animated.View>
+
+        {/* Comment Button */}
+        <TouchableOpacity
+          style={twitterStyles.actionButton}
+          onPress={onCommentPress}
           activeOpacity={0.6}
         >
-          <Ionicons 
-            name={isUpvoted ? "arrow-up-circle" : "arrow-up-circle-outline"} 
-            size={20} 
-            color={upvoteColor} 
-          />
-          <Text style={[twitterStyles.actionCount, { color: upvoteColor }]}>
-            {formatCount(upvotes)}
-          </Text>
+          <Ionicons name="chatbubble-outline" size={18} color={colors.gray} />
         </TouchableOpacity>
-      </Animated.View>
 
-      {/* Downvote Button */}
-      <Animated.View style={{ transform: [{ scale: downvoteScale }] }}>
-        <TouchableOpacity 
-          style={twitterStyles.actionButton} 
-          onPress={handleDownvote}
-          activeOpacity={0.6}
-        >
-          <Ionicons 
-            name={isDownvoted ? "arrow-down-circle" : "arrow-down-circle-outline"} 
-            size={20} 
-            color={downvoteColor} 
-          />
-          <Text style={[twitterStyles.actionCount, { color: downvoteColor }]}>
-            {formatCount(downvotes)}
-          </Text>
-        </TouchableOpacity>
-      </Animated.View>
-
-      {/* Comment Button */}
-      <TouchableOpacity style={twitterStyles.actionButton}>
-        <Ionicons name="chatbubble-outline" size={18} color={colors.gray} />
-      </TouchableOpacity>
-
-      {/* Flag Button */}
-      <Animated.View style={{ transform: [{ scale: flagScale }] }}>
-        <TouchableOpacity 
-          style={twitterStyles.actionButton} 
-          onPress={handleFlag}
-          activeOpacity={0.6}
-        >
-          <Ionicons 
-            name={isFlagged ? "flag" : "flag-outline"} 
-            size={18} 
-            color={flagColor} 
-          />
-        </TouchableOpacity>
-      </Animated.View>
-    </View>
-  );
-});
+        {/* Flag Button */}
+        <Animated.View style={{ transform: [{ scale: flagScale }] }}>
+          <TouchableOpacity
+            style={twitterStyles.actionButton}
+            onPress={handleFlag}
+            activeOpacity={0.6}
+          >
+            <Ionicons
+              name={isFlagged ? "flag" : "flag-outline"}
+              size={18}
+              color={flagColor}
+            />
+          </TouchableOpacity>
+        </Animated.View>
+      </View>
+    );
+  },
+);
 
 // ============ SKELETON COMPONENTS ============
 
@@ -346,30 +385,85 @@ const TwitterSkeleton = memo(({ colors }) => (
   <View style={[twitterStyles.post, { borderBottomColor: colors.border }]}>
     <View style={twitterStyles.postContent}>
       {/* Avatar skeleton */}
-      <View style={[twitterStyles.avatarSkeleton, { backgroundColor: colors.border }]} />
-      
+      <View
+        style={[
+          twitterStyles.avatarSkeleton,
+          { backgroundColor: colors.border },
+        ]}
+      />
+
       {/* Content skeleton */}
       <View style={twitterStyles.postBody}>
         {/* Header skeleton */}
         <View style={twitterStyles.skeletonHeader}>
-          <View style={[twitterStyles.skeletonName, { backgroundColor: colors.border }]} />
-          <View style={[twitterStyles.skeletonHandle, { backgroundColor: colors.border }]} />
+          <View
+            style={[
+              twitterStyles.skeletonName,
+              { backgroundColor: colors.border },
+            ]}
+          />
+          <View
+            style={[
+              twitterStyles.skeletonHandle,
+              { backgroundColor: colors.border },
+            ]}
+          />
         </View>
-        
+
         {/* Text skeleton */}
-        <View style={[twitterStyles.skeletonText, { backgroundColor: colors.border, width: '100%' }]} />
-        <View style={[twitterStyles.skeletonText, { backgroundColor: colors.border, width: '90%' }]} />
-        <View style={[twitterStyles.skeletonText, { backgroundColor: colors.border, width: '75%' }]} />
-        
+        <View
+          style={[
+            twitterStyles.skeletonText,
+            { backgroundColor: colors.border, width: "100%" },
+          ]}
+        />
+        <View
+          style={[
+            twitterStyles.skeletonText,
+            { backgroundColor: colors.border, width: "90%" },
+          ]}
+        />
+        <View
+          style={[
+            twitterStyles.skeletonText,
+            { backgroundColor: colors.border, width: "75%" },
+          ]}
+        />
+
         {/* Media skeleton */}
-        <View style={[twitterStyles.skeletonMedia, { backgroundColor: colors.border }]} />
-        
+        <View
+          style={[
+            twitterStyles.skeletonMedia,
+            { backgroundColor: colors.border },
+          ]}
+        />
+
         {/* Actions skeleton */}
         <View style={twitterStyles.skeletonActions}>
-          <View style={[twitterStyles.skeletonAction, { backgroundColor: colors.border }]} />
-          <View style={[twitterStyles.skeletonAction, { backgroundColor: colors.border }]} />
-          <View style={[twitterStyles.skeletonAction, { backgroundColor: colors.border }]} />
-          <View style={[twitterStyles.skeletonAction, { backgroundColor: colors.border }]} />
+          <View
+            style={[
+              twitterStyles.skeletonAction,
+              { backgroundColor: colors.border },
+            ]}
+          />
+          <View
+            style={[
+              twitterStyles.skeletonAction,
+              { backgroundColor: colors.border },
+            ]}
+          />
+          <View
+            style={[
+              twitterStyles.skeletonAction,
+              { backgroundColor: colors.border },
+            ]}
+          />
+          <View
+            style={[
+              twitterStyles.skeletonAction,
+              { backgroundColor: colors.border },
+            ]}
+          />
         </View>
       </View>
     </View>
@@ -380,43 +474,57 @@ const TwitterSkeleton = memo(({ colors }) => (
 const SkeletonCard = ({ colors }) => <TwitterSkeleton colors={colors} />;
 
 // Fast image component - minimal state, maximum performance
-const SmartImage = memo(({ uri, style, colors, onPress }) => {
-  const [loaded, setLoaded] = useState(false);
-  const [error, setError] = useState(false);
+const SmartImage = memo(
+  ({ uri, style, colors, onPress }) => {
+    const [loaded, setLoaded] = useState(false);
+    const [error, setError] = useState(false);
 
-  // Memoize callbacks to prevent re-renders
-  const handleLoad = useCallback(() => setLoaded(true), []);
-  const handleError = useCallback(() => setError(true), []);
+    // Memoize callbacks to prevent re-renders
+    const handleLoad = useCallback(() => setLoaded(true), []);
+    const handleError = useCallback(() => setError(true), []);
 
-  if (error) {
+    if (error) {
+      return (
+        <View
+          style={[
+            style,
+            {
+              backgroundColor: colors.border,
+              justifyContent: "center",
+              alignItems: "center",
+            },
+          ]}
+        >
+          <Ionicons name="image-outline" size={28} color={colors.gray} />
+        </View>
+      );
+    }
+
     return (
-      <View style={[style, { backgroundColor: colors.border, justifyContent: 'center', alignItems: 'center' }]}>
-        <Ionicons name="image-outline" size={28} color={colors.gray} />
-      </View>
+      <Pressable
+        onPress={onPress}
+        disabled={!onPress}
+        style={[style, { backgroundColor: colors.border }]}
+      >
+        <Image
+          source={{ uri, cache: "force-cache" }}
+          style={[StyleSheet.absoluteFill, { opacity: loaded ? 1 : 0 }]}
+          resizeMode="cover"
+          onLoad={handleLoad}
+          onError={handleError}
+          fadeDuration={0}
+        />
+      </Pressable>
     );
-  }
-
-  return (
-    <Pressable 
-      onPress={onPress} 
-      disabled={!onPress}
-      style={[style, { backgroundColor: colors.border }]}
-    >
-      <Image
-        source={{ uri, cache: 'force-cache' }}
-        style={[StyleSheet.absoluteFill, { opacity: loaded ? 1 : 0 }]}
-        resizeMode="cover"
-        onLoad={handleLoad}
-        onError={handleError}
-        fadeDuration={0}
-      />
-    </Pressable>
-  );
-}, (prevProps, nextProps) => {
-  // Custom comparison - only re-render if uri or colors change
-  return prevProps.uri === nextProps.uri && 
-         prevProps.colors.border === nextProps.colors.border;
-});
+  },
+  (prevProps, nextProps) => {
+    // Custom comparison - only re-render if uri or colors change
+    return (
+      prevProps.uri === nextProps.uri &&
+      prevProps.colors.border === nextProps.colors.border
+    );
+  },
+);
 
 // Video thumbnail component - tries to show first frame from video URL
 const VideoThumbnail = memo(({ uri, style, colors, onPress }) => {
@@ -426,43 +534,43 @@ const VideoThumbnail = memo(({ uri, style, colors, onPress }) => {
 
   useEffect(() => {
     let isMounted = true;
-    
+
     const generateThumbnail = async () => {
       if (!uri) {
         setIsLoading(false);
         setHasError(true);
         return;
       }
-      
+
       try {
         const { uri: thumbUri } = await VideoThumbnails.getThumbnailAsync(uri, {
           time: 1000, // Get frame at 1 second
           quality: 0.7,
         });
-        
+
         if (isMounted) {
           setThumbnailUri(thumbUri);
           setIsLoading(false);
         }
       } catch (error) {
-        console.log('Thumbnail generation failed:', error.message);
+        console.log("Thumbnail generation failed:", error.message);
         if (isMounted) {
           setHasError(true);
           setIsLoading(false);
         }
       }
     };
-    
+
     generateThumbnail();
-    
+
     return () => {
       isMounted = false;
     };
   }, [uri]);
 
   return (
-    <TouchableOpacity 
-      style={[style, { overflow: 'hidden', backgroundColor: '#1a1a2e' }]}
+    <TouchableOpacity
+      style={[style, { overflow: "hidden", backgroundColor: "#1a1a2e" }]}
       onPress={onPress}
       activeOpacity={0.8}
     >
@@ -474,63 +582,96 @@ const VideoThumbnail = memo(({ uri, style, colors, onPress }) => {
           resizeMode="cover"
         />
       )}
-      
+
       {/* Fallback background if thumbnail generation fails */}
       {(hasError || (!thumbnailUri && !isLoading)) && (
-        <View style={[StyleSheet.absoluteFill, { 
-          backgroundColor: '#1a1a2e',
-          justifyContent: 'center',
-          alignItems: 'center',
-        }]}>
+        <View
+          style={[
+            StyleSheet.absoluteFill,
+            {
+              backgroundColor: "#1a1a2e",
+              justifyContent: "center",
+              alignItems: "center",
+            },
+          ]}
+        >
           <Ionicons name="videocam" size={60} color="rgba(255,255,255,0.15)" />
         </View>
       )}
-      
+
       {/* Loading indicator */}
       {isLoading && (
-        <View style={[StyleSheet.absoluteFill, { 
-          backgroundColor: '#1a1a2e',
-          justifyContent: 'center',
-          alignItems: 'center',
-        }]}>
+        <View
+          style={[
+            StyleSheet.absoluteFill,
+            {
+              backgroundColor: "#1a1a2e",
+              justifyContent: "center",
+              alignItems: "center",
+            },
+          ]}
+        >
           <ActivityIndicator size="small" color="rgba(255,255,255,0.5)" />
         </View>
       )}
-      
+
       {/* Dark overlay for better play button visibility */}
-      {!isLoading && <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.3)' }]} />}
-      
+      {!isLoading && (
+        <View
+          style={[
+            StyleSheet.absoluteFill,
+            { backgroundColor: "rgba(0,0,0,0.3)" },
+          ]}
+        />
+      )}
+
       {/* Play button overlay */}
-      <View style={[StyleSheet.absoluteFill, { justifyContent: 'center', alignItems: 'center' }]}>
-        <View style={{ 
-          backgroundColor: 'rgba(0,0,0,0.7)', 
-          borderRadius: 35, 
-          width: 70, 
-          height: 70, 
-          justifyContent: 'center', 
-          alignItems: 'center',
-          borderWidth: 3,
-          borderColor: 'rgba(255,255,255,0.3)',
-        }}>
-          <Ionicons name="play" size={32} color="#fff" style={{ marginLeft: 4 }} />
+      <View
+        style={[
+          StyleSheet.absoluteFill,
+          { justifyContent: "center", alignItems: "center" },
+        ]}
+      >
+        <View
+          style={{
+            backgroundColor: "rgba(0,0,0,0.7)",
+            borderRadius: 35,
+            width: 70,
+            height: 70,
+            justifyContent: "center",
+            alignItems: "center",
+            borderWidth: 3,
+            borderColor: "rgba(255,255,255,0.3)",
+          }}
+        >
+          <Ionicons
+            name="play"
+            size={32}
+            color="#fff"
+            style={{ marginLeft: 4 }}
+          />
         </View>
       </View>
-      
+
       {/* Video badge */}
-      <View style={{
-        position: 'absolute',
-        top: 8,
-        left: 8,
-        backgroundColor: 'rgba(0,0,0,0.7)',
-        paddingHorizontal: 8,
-        paddingVertical: 4,
-        borderRadius: 4,
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 4,
-      }}>
+      <View
+        style={{
+          position: "absolute",
+          top: 8,
+          left: 8,
+          backgroundColor: "rgba(0,0,0,0.7)",
+          paddingHorizontal: 8,
+          paddingVertical: 4,
+          borderRadius: 4,
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 4,
+        }}
+      >
         <Ionicons name="videocam" size={12} color="#fff" />
-        <Text style={{ color: '#fff', fontSize: 11, fontWeight: '600' }}>VIDEO</Text>
+        <Text style={{ color: "#fff", fontSize: 11, fontWeight: "600" }}>
+          VIDEO
+        </Text>
       </View>
     </TouchableOpacity>
   );
@@ -542,7 +683,7 @@ const VideoPlayerModal = ({ visible, uri, onClose, colors }) => {
   const [error, setError] = useState(false);
 
   // Create video player with the new API
-  const player = useVideoPlayer(uri, player => {
+  const player = useVideoPlayer(uri, (player) => {
     player.loop = true;
     player.play();
   });
@@ -558,28 +699,28 @@ const VideoPlayerModal = ({ visible, uri, onClose, colors }) => {
   // Listen to player status changes
   useEffect(() => {
     if (!player) return;
-    
+
     const subscriptions = [];
-    
+
     // Listen for status changes
-    const statusSub = player.addListener('statusChange', (newStatus) => {
-      console.log('Video status:', newStatus);
+    const statusSub = player.addListener("statusChange", (newStatus) => {
+      console.log("Video status:", newStatus);
       // expo-video uses 'readyToPlay', 'loading', 'idle', 'error'
-      if (newStatus === 'readyToPlay') {
+      if (newStatus === "readyToPlay") {
         setIsLoading(false);
         setError(false);
-      } else if (newStatus === 'error') {
+      } else if (newStatus === "error") {
         setError(true);
         setIsLoading(false);
-      } else if (newStatus === 'loading') {
+      } else if (newStatus === "loading") {
         setIsLoading(true);
       }
     });
     subscriptions.push(statusSub);
-    
+
     // Also listen for when video starts playing as backup
-    const playingSub = player.addListener('playingChange', (isPlaying) => {
-      console.log('Video playing:', isPlaying);
+    const playingSub = player.addListener("playingChange", (isPlaying) => {
+      console.log("Video playing:", isPlaying);
       if (isPlaying) {
         setIsLoading(false);
       }
@@ -587,7 +728,7 @@ const VideoPlayerModal = ({ visible, uri, onClose, colors }) => {
     subscriptions.push(playingSub);
 
     // Check initial status
-    if (player.status === 'readyToPlay') {
+    if (player.status === "readyToPlay") {
       setIsLoading(false);
     }
 
@@ -598,7 +739,7 @@ const VideoPlayerModal = ({ visible, uri, onClose, colors }) => {
     }, 5000);
 
     return () => {
-      subscriptions.forEach(sub => sub?.remove());
+      subscriptions.forEach((sub) => sub?.remove());
       clearTimeout(timeout);
     };
   }, [player]);
@@ -606,9 +747,9 @@ const VideoPlayerModal = ({ visible, uri, onClose, colors }) => {
   // Additional effect to check player.playing state periodically
   useEffect(() => {
     if (!player || !visible) return;
-    
+
     const interval = setInterval(() => {
-      if (player.playing || player.status === 'readyToPlay') {
+      if (player.playing || player.status === "readyToPlay") {
         setIsLoading(false);
         clearInterval(interval);
       }
@@ -652,7 +793,9 @@ const VideoPlayerModal = ({ visible, uri, onClose, colors }) => {
             {isLoading && (
               <View style={styles.videoLoadingOverlay}>
                 <ActivityIndicator size="large" color="#fff" />
-                <Text style={{ color: '#fff', marginTop: 12 }}>Loading video...</Text>
+                <Text style={{ color: "#fff", marginTop: 12 }}>
+                  Loading video...
+                </Text>
               </View>
             )}
           </View>
@@ -676,18 +819,21 @@ const ImageViewerModal = ({ visible, images, initialIndex, onClose }) => {
       setErrorStates({});
       // Scroll to initial index when modal opens
       setTimeout(() => {
-        flatListRef.current?.scrollToIndex({ index: initialIndex || 0, animated: false });
+        flatListRef.current?.scrollToIndex({
+          index: initialIndex || 0,
+          animated: false,
+        });
       }, 100);
     }
   }, [visible, initialIndex]);
 
   const handleImageLoad = useCallback((index) => {
-    setLoadingStates(prev => ({ ...prev, [index]: false }));
+    setLoadingStates((prev) => ({ ...prev, [index]: false }));
   }, []);
 
   const handleImageError = useCallback((index) => {
-    setErrorStates(prev => ({ ...prev, [index]: true }));
-    setLoadingStates(prev => ({ ...prev, [index]: false }));
+    setErrorStates((prev) => ({ ...prev, [index]: true }));
+    setLoadingStates((prev) => ({ ...prev, [index]: false }));
   }, []);
 
   const onViewableItemsChanged = useRef(({ viewableItems }) => {
@@ -714,7 +860,7 @@ const ImageViewerModal = ({ visible, images, initialIndex, onClose }) => {
         ) : (
           <>
             <Image
-              source={{ uri, cache: 'force-cache' }}
+              source={{ uri, cache: "force-cache" }}
               style={styles.fullscreenImage}
               resizeMode="contain"
               onLoad={() => handleImageLoad(index)}
@@ -723,7 +869,9 @@ const ImageViewerModal = ({ visible, images, initialIndex, onClose }) => {
             {isLoading && (
               <View style={styles.videoLoadingOverlay}>
                 <ActivityIndicator size="large" color="#fff" />
-                <Text style={{ color: '#fff', marginTop: 12 }}>Loading image...</Text>
+                <Text style={{ color: "#fff", marginTop: 12 }}>
+                  Loading image...
+                </Text>
               </View>
             )}
           </>
@@ -773,7 +921,10 @@ const ImageViewerModal = ({ visible, images, initialIndex, onClose }) => {
           initialScrollIndex={initialIndex || 0}
           onScrollToIndexFailed={(info) => {
             setTimeout(() => {
-              flatListRef.current?.scrollToIndex({ index: info.index, animated: false });
+              flatListRef.current?.scrollToIndex({
+                index: info.index,
+                animated: false,
+              });
             }, 100);
           }}
         />
@@ -786,7 +937,7 @@ const ImageViewerModal = ({ visible, images, initialIndex, onClose }) => {
                 key={index}
                 style={[
                   styles.paginationDot,
-                  currentIndex === index && styles.paginationDotActive
+                  currentIndex === index && styles.paginationDotActive,
                 ]}
               />
             ))}
@@ -799,8 +950,10 @@ const ImageViewerModal = ({ visible, images, initialIndex, onClose }) => {
 
 export default function HomeScreen() {
   const { colors, isDark } = useTheme();
-  const { selectedCategories, minCredibility, maxDaysOld, getActiveCategory } = useFilters();
-  
+  const { selectedCategories, minCredibility, maxDaysOld, getActiveCategory } =
+    useFilters();
+  const navigation = useNavigation();
+
   // State management
   const [posts, setPosts] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -810,9 +963,9 @@ export default function HomeScreen() {
   const [error, setError] = useState(null);
   const [isUsingRealLocation, setIsUsingRealLocation] = useState(false);
   const [isLoadingLocation, setIsLoadingLocation] = useState(false);
-  const [locationName, setLocationName] = useState('Loading...');
+  const [locationName, setLocationName] = useState("Loading...");
   const [locationCache, setLocationCache] = useState({});
-  
+
   // Video player state
   const [videoModalVisible, setVideoModalVisible] = useState(false);
   const [currentVideoUri, setCurrentVideoUri] = useState(null);
@@ -823,10 +976,19 @@ export default function HomeScreen() {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
 
   // Credibility tooltip state
-  const [credibilityModal, setCredibilityModal] = useState({ visible: false, score: 0 });
+  const [credibilityModal, setCredibilityModal] = useState({
+    visible: false,
+    score: 0,
+  });
 
   // Location tooltip state
-  const [locationModal, setLocationModal] = useState({ visible: false, name: '', lat: 0, lon: 0, distance: null });
+  const [locationModal, setLocationModal] = useState({
+    visible: false,
+    name: "",
+    lat: 0,
+    lon: 0,
+    distance: null,
+  });
 
   // Function to show credibility info
   const showCredibilityInfo = useCallback((score) => {
@@ -856,22 +1018,22 @@ export default function HomeScreen() {
   // Reverse geocode coordinates to get location name
   const getLocationName = async (lat, lon) => {
     const cacheKey = `${lat.toFixed(4)},${lon.toFixed(4)}`;
-    
+
     // Check cache first
     if (locationCache[cacheKey]) {
       return locationCache[cacheKey];
     }
-    
+
     try {
       const result = await Location.reverseGeocodeAsync({
         latitude: lat,
-        longitude: lon
+        longitude: lon,
       });
-      
+
       if (result && result.length > 0) {
         const loc = result[0];
         // Build a readable location string
-        let locationStr = '';
+        let locationStr = "";
         if (loc.district) {
           locationStr = loc.district;
         } else if (loc.subregion) {
@@ -879,27 +1041,27 @@ export default function HomeScreen() {
         } else if (loc.name) {
           locationStr = loc.name;
         }
-        
+
         if (loc.city && loc.city !== locationStr) {
           locationStr = locationStr ? `${locationStr}, ${loc.city}` : loc.city;
         }
-        
+
         if (!locationStr) {
           locationStr = `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
         }
-        
+
         // Cache the result
-        setLocationCache(prev => ({ ...prev, [cacheKey]: locationStr }));
+        setLocationCache((prev) => ({ ...prev, [cacheKey]: locationStr }));
         return locationStr;
       }
     } catch (error) {
-      console.log('Reverse geocoding failed:', error);
+      console.log("Reverse geocoding failed:", error);
     }
-    
+
     // Fallback to coordinates
     return `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
   };
-  
+
   useEffect(() => {
     requestLocationPermission();
   }, []);
@@ -914,9 +1076,9 @@ export default function HomeScreen() {
     setIsLoadingLocation(true);
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
-      setLocationPermission(status === 'granted');
-      
-      if (status === 'granted') {
+      setLocationPermission(status === "granted");
+
+      if (status === "granted") {
         try {
           const location = await Location.getCurrentPositionAsync({
             accuracy: Location.Accuracy.Balanced,
@@ -925,15 +1087,22 @@ export default function HomeScreen() {
           });
           setUserLocation({
             latitude: location.coords.latitude,
-            longitude: location.coords.longitude
+            longitude: location.coords.longitude,
           });
           setIsUsingRealLocation(true);
           // Get actual location name via reverse geocoding
-          const actualLocationName = await getLocationName(location.coords.latitude, location.coords.longitude);
+          const actualLocationName = await getLocationName(
+            location.coords.latitude,
+            location.coords.longitude,
+          );
           setLocationName(actualLocationName);
-          console.log('Using real location:', location.coords, actualLocationName);
+          console.log(
+            "Using real location:",
+            location.coords,
+            actualLocationName,
+          );
         } catch (locError) {
-          console.error('Error getting location:', locError);
+          console.error("Error getting location:", locError);
           // Try to get last known location as fallback
           try {
             const lastKnown = await Location.getLastKnownPositionAsync({
@@ -942,27 +1111,30 @@ export default function HomeScreen() {
             if (lastKnown) {
               setUserLocation({
                 latitude: lastKnown.coords.latitude,
-                longitude: lastKnown.coords.longitude
+                longitude: lastKnown.coords.longitude,
               });
               setIsUsingRealLocation(true);
               // Get actual location name via reverse geocoding
-              const lastKnownName = await getLocationName(lastKnown.coords.latitude, lastKnown.coords.longitude);
+              const lastKnownName = await getLocationName(
+                lastKnown.coords.latitude,
+                lastKnown.coords.longitude,
+              );
               setLocationName(lastKnownName);
-              console.log('Using last known location:', lastKnownName);
+              console.log("Using last known location:", lastKnownName);
             } else {
               // Use a default location (Karachi, Pakistan) if all fails
               setUserLocation({
                 latitude: 24.8607,
-                longitude: 67.0099
+                longitude: 67.0099,
               });
               setIsUsingRealLocation(false);
-              setLocationName('Karachi (Default)');
-              console.log('Using default location (Karachi)');
+              setLocationName("Karachi (Default)");
+              console.log("Using default location (Karachi)");
               if (showAlert) {
                 Alert.alert(
-                  'Location Unavailable',
-                  'Could not get your location. Showing posts from Karachi. Tap the location button to try again.',
-                  [{ text: 'OK' }]
+                  "Location Unavailable",
+                  "Could not get your location. Showing posts from Karachi. Tap the location button to try again.",
+                  [{ text: "OK" }],
                 );
               }
             }
@@ -970,41 +1142,44 @@ export default function HomeScreen() {
             // Last fallback - use default location
             setUserLocation({
               latitude: 24.8607,
-              longitude: 67.0099
+              longitude: 67.0099,
             });
             setIsUsingRealLocation(false);
-            setLocationName('Karachi (Default)');
-            console.log('Using default location after all attempts failed');
+            setLocationName("Karachi (Default)");
+            console.log("Using default location after all attempts failed");
           }
         }
       } else {
         // Permission denied - use default location
         setUserLocation({
           latitude: 24.8607,
-          longitude: 67.0099
+          longitude: 67.0099,
         });
         setIsUsingRealLocation(false);
-        setLocationName('Karachi (Default)');
+        setLocationName("Karachi (Default)");
         if (showAlert) {
           Alert.alert(
-            'Location Permission Required',
-            'Please enable location to see posts near you. Using default location.',
+            "Location Permission Required",
+            "Please enable location to see posts near you. Using default location.",
             [
-              { text: 'Enable', onPress: () => Location.requestForegroundPermissionsAsync() },
-              { text: 'OK' }
-            ]
+              {
+                text: "Enable",
+                onPress: () => Location.requestForegroundPermissionsAsync(),
+              },
+              { text: "OK" },
+            ],
           );
         }
       }
     } catch (error) {
-      console.error('Error requesting location:', error);
+      console.error("Error requesting location:", error);
       // Use default on any error
       setUserLocation({
         latitude: 24.8607,
-        longitude: 67.0099
+        longitude: 67.0099,
       });
       setIsUsingRealLocation(false);
-      setLocationName('Karachi (Default)');
+      setLocationName("Karachi (Default)");
     } finally {
       setIsLoadingLocation(false);
     }
@@ -1015,8 +1190,8 @@ export default function HomeScreen() {
     setIsLoadingLocation(true);
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
-      
-      if (status === 'granted') {
+
+      if (status === "granted") {
         const location = await Location.getCurrentPositionAsync({
           accuracy: Location.Accuracy.High,
           maximumAge: 0,
@@ -1024,26 +1199,33 @@ export default function HomeScreen() {
         });
         setUserLocation({
           latitude: location.coords.latitude,
-          longitude: location.coords.longitude
+          longitude: location.coords.longitude,
         });
         setIsUsingRealLocation(true);
         // Get actual location name via reverse geocoding
-        const refreshedLocationName = await getLocationName(location.coords.latitude, location.coords.longitude);
+        const refreshedLocationName = await getLocationName(
+          location.coords.latitude,
+          location.coords.longitude,
+        );
         setLocationName(refreshedLocationName);
-        console.log('Location refreshed:', location.coords, refreshedLocationName);
+        console.log(
+          "Location refreshed:",
+          location.coords,
+          refreshedLocationName,
+        );
       } else {
         Alert.alert(
-          'Location Permission Required',
-          'Please enable location in your device settings.',
-          [{ text: 'OK' }]
+          "Location Permission Required",
+          "Please enable location in your device settings.",
+          [{ text: "OK" }],
         );
       }
     } catch (error) {
-      console.error('Error refreshing location:', error);
+      console.error("Error refreshing location:", error);
       Alert.alert(
-        'Location Error',
-        'Could not get your location. Make sure location services are enabled in your device settings.',
-        [{ text: 'OK' }]
+        "Location Error",
+        "Could not get your location. Make sure location services are enabled in your device settings.",
+        [{ text: "OK" }],
       );
     } finally {
       setIsLoadingLocation(false);
@@ -1055,48 +1237,48 @@ export default function HomeScreen() {
     if (!userLocation) return [];
 
     try {
-      const token = await AsyncStorage.getItem('authToken');
-      
+      const token = await AsyncStorage.getItem("authToken");
+
       // Build query parameters
       const queryParams = new URLSearchParams();
-      queryParams.append('lat', userLocation.latitude.toString());
-      queryParams.append('lon', userLocation.longitude.toString());
-      queryParams.append('radius_km', '50');
-      queryParams.append('max_days_old', maxDaysOld.toString());
-      
+      queryParams.append("lat", userLocation.latitude.toString());
+      queryParams.append("lon", userLocation.longitude.toString());
+      queryParams.append("radius_km", "50");
+      queryParams.append("max_days_old", maxDaysOld.toString());
+
       // Add category filter if not 'all'
       const activeCategory = getActiveCategory();
       if (activeCategory) {
-        queryParams.append('category', activeCategory);
+        queryParams.append("category", activeCategory);
       }
-      
+
       // Add credibility filter
       if (minCredibility) {
-        queryParams.append('min_credibility', minCredibility.toString());
+        queryParams.append("min_credibility", minCredibility.toString());
       }
-      
-      queryParams.append('skip', '0');
-      queryParams.append('limit', '20');
-      
-      console.log('Fetching feed with params:', queryParams.toString());
-      
+
+      queryParams.append("skip", "0");
+      queryParams.append("limit", "20");
+
+      console.log("Fetching feed with params:", queryParams.toString());
+
       const response = await fetch(`${API_BASE_URL}/feed?${queryParams}`, {
-        method: 'GET',
+        method: "GET",
         headers: {
-          'Content-Type': 'application/json',
-          ...(token && { 'Authorization': `Bearer ${token}` })
-        }
+          "Content-Type": "application/json",
+          ...(token && { Authorization: `Bearer ${token}` }),
+        },
       });
-      
+
       if (!response.ok) {
         const errorText = await response.text();
-        console.error('Feed API error:', response.status, errorText);
+        console.error("Feed API error:", response.status, errorText);
         throw new Error(`Failed to fetch feed: ${response.status}`);
       }
-      
+
       const data = await response.json();
-      console.log('Feed API response:', data);
-      
+      console.log("Feed API response:", data);
+
       if (data.success && data.details?.posts) {
         // Sort posts by created_at from latest to earliest
         const sortedPosts = data.details.posts.sort((a, b) => {
@@ -1104,59 +1286,73 @@ export default function HomeScreen() {
         });
         return sortedPosts;
       }
-      
+
       return [];
     } catch (error) {
-      console.error('Error fetching feed:', error);
+      console.error("Error fetching feed:", error);
       throw error;
     }
   }, [userLocation, maxDaysOld, minCredibility, getActiveCategory]);
 
   // Batch geocode locations in background (non-blocking)
-  const batchGeocodeLocations = useCallback(async (postsToGeocode) => {
-    const uncachedPosts = postsToGeocode.filter(post => {
-      const cacheKey = `${post.location_lat.toFixed(4)},${post.location_lon.toFixed(4)}`;
-      return !locationCache[cacheKey];
-    });
+  const batchGeocodeLocations = useCallback(
+    async (postsToGeocode) => {
+      const uncachedPosts = postsToGeocode.filter((post) => {
+        const cacheKey = `${post.location_lat.toFixed(4)},${post.location_lon.toFixed(4)}`;
+        return !locationCache[cacheKey];
+      });
 
-    // Only geocode first 5 unique locations to avoid rate limiting
-    const uniqueLocations = [];
-    const seen = new Set();
-    for (const post of uncachedPosts) {
-      const key = `${post.location_lat.toFixed(4)},${post.location_lon.toFixed(4)}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        uniqueLocations.push({ lat: post.location_lat, lon: post.location_lon, key });
-        if (uniqueLocations.length >= 5) break;
-      }
-    }
-
-    // Geocode in background without blocking UI
-    for (const loc of uniqueLocations) {
-      try {
-        const result = await Location.reverseGeocodeAsync({
-          latitude: loc.lat,
-          longitude: loc.lon
-        });
-        if (result && result.length > 0) {
-          const r = result[0];
-          const name = r.district || r.subregion || r.city || r.name || `${loc.lat.toFixed(2)}°, ${loc.lon.toFixed(2)}°`;
-          setLocationCache(prev => ({ ...prev, [loc.key]: name }));
+      // Only geocode first 5 unique locations to avoid rate limiting
+      const uniqueLocations = [];
+      const seen = new Set();
+      for (const post of uncachedPosts) {
+        const key = `${post.location_lat.toFixed(4)},${post.location_lon.toFixed(4)}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          uniqueLocations.push({
+            lat: post.location_lat,
+            lon: post.location_lon,
+            key,
+          });
+          if (uniqueLocations.length >= 5) break;
         }
-      } catch (e) {
-        // Silently fail - coordinates will be shown
       }
-    }
-  }, [locationCache]);
+
+      // Geocode in background without blocking UI
+      for (const loc of uniqueLocations) {
+        try {
+          const result = await Location.reverseGeocodeAsync({
+            latitude: loc.lat,
+            longitude: loc.lon,
+          });
+          if (result && result.length > 0) {
+            const r = result[0];
+            const name =
+              r.district ||
+              r.subregion ||
+              r.city ||
+              r.name ||
+              `${loc.lat.toFixed(2)}°, ${loc.lon.toFixed(2)}°`;
+            setLocationCache((prev) => ({ ...prev, [loc.key]: name }));
+          }
+        } catch (e) {
+          // Silently fail - coordinates will be shown
+        }
+      }
+    },
+    [locationCache],
+  );
 
   const loadFeed = async () => {
     try {
       setError(null);
-      
+
       // STALE-WHILE-REVALIDATE: Load cached data first for instant display
       if (posts.length === 0) {
         try {
-          const cachedData = await AsyncStorage.getItem('@verifikar_feed_cache');
+          const cachedData = await AsyncStorage.getItem(
+            "@verifikar_feed_cache",
+          );
           if (cachedData) {
             const { posts: cachedPosts, timestamp } = JSON.parse(cachedData);
             // Use cache if it's less than 30 minutes old
@@ -1172,34 +1368,37 @@ export default function HomeScreen() {
             setIsLoading(true);
           }
         } catch (cacheError) {
-          console.log('Cache read error:', cacheError);
+          console.log("Cache read error:", cacheError);
           setIsLoading(true);
         }
       } else {
         setIsLoading(true);
       }
-      
+
       // Fetch fresh data in background
       const feedData = await fetchFeed();
       setPosts(feedData);
-      
+
       // Cache the fresh data
       try {
-        await AsyncStorage.setItem('@verifikar_feed_cache', JSON.stringify({
-          posts: feedData,
-          timestamp: Date.now()
-        }));
+        await AsyncStorage.setItem(
+          "@verifikar_feed_cache",
+          JSON.stringify({
+            posts: feedData,
+            timestamp: Date.now(),
+          }),
+        );
       } catch (cacheError) {
-        console.log('Cache write error:', cacheError);
+        console.log("Cache write error:", cacheError);
       }
-      
+
       // Start background geocoding after posts are set
       setTimeout(() => batchGeocodeLocations(feedData), 100);
     } catch (error) {
-      console.error('Error loading feed:', error);
+      console.error("Error loading feed:", error);
       // Only show error if we have no cached data
       if (posts.length === 0) {
-        setError(error.message || 'Failed to load feed');
+        setError(error.message || "Failed to load feed");
       }
     } finally {
       setIsLoading(false);
@@ -1210,7 +1409,7 @@ export default function HomeScreen() {
     try {
       setIsRefreshing(true);
       setError(null);
-      
+
       // Refresh location
       if (locationPermission) {
         try {
@@ -1221,28 +1420,31 @@ export default function HomeScreen() {
           });
           setUserLocation({
             latitude: location.coords.latitude,
-            longitude: location.coords.longitude
+            longitude: location.coords.longitude,
           });
         } catch (locError) {
-          console.log('Location refresh failed, using existing location');
+          console.log("Location refresh failed, using existing location");
         }
       }
-      
+
       const feedData = await fetchFeed();
       setPosts(feedData);
-      
+
       // Update cache on refresh
       try {
-        await AsyncStorage.setItem('@verifikar_feed_cache', JSON.stringify({
-          posts: feedData,
-          timestamp: Date.now()
-        }));
+        await AsyncStorage.setItem(
+          "@verifikar_feed_cache",
+          JSON.stringify({
+            posts: feedData,
+            timestamp: Date.now(),
+          }),
+        );
       } catch (cacheError) {
-        console.log('Cache write error:', cacheError);
+        console.log("Cache write error:", cacheError);
       }
     } catch (error) {
-      console.error('Error refreshing feed:', error);
-      setError(error.message || 'Failed to refresh feed');
+      console.error("Error refreshing feed:", error);
+      setError(error.message || "Failed to refresh feed");
     } finally {
       setIsRefreshing(false);
     }
@@ -1263,21 +1465,21 @@ export default function HomeScreen() {
 
   const getCategoryColor = (category) => {
     const categoryColors = {
-      Accident: '#FF6B6B',
-      Crime: '#E74C3C',
-      Infrastructure: '#3498DB',
-      Social: '#2ECC71',
-      Emergency: '#E67E22',
-      Weather: '#9B59B6',
-      Fire: '#FF4500',
-      Protest: '#FFD700',
-      Traffic: '#FF8C00',
-      Health: '#00CED1',
-      Disaster: '#8B0000',
-      'Natural Disaster': '#8B0000',
-      Flood: '#1E90FF',
-      Earthquake: '#8B4513',
-      default: colors.primary
+      Accident: "#FF6B6B",
+      Crime: "#E74C3C",
+      Infrastructure: "#3498DB",
+      Social: "#2ECC71",
+      Emergency: "#E67E22",
+      Weather: "#9B59B6",
+      Fire: "#FF4500",
+      Protest: "#FFD700",
+      Traffic: "#FF8C00",
+      Health: "#00CED1",
+      Disaster: "#8B0000",
+      "Natural Disaster": "#8B0000",
+      Flood: "#1E90FF",
+      Earthquake: "#8B4513",
+      default: colors.primary,
     };
     return categoryColors[category] || categoryColors.default;
   };
@@ -1285,272 +1487,427 @@ export default function HomeScreen() {
   // Get icon for each category - helps users who can't read
   const getCategoryIcon = (category) => {
     const categoryIcons = {
-      Accident: 'car',                  // 🚗 Car accident
-      Crime: 'alert-circle',            // ⚠️ Crime/danger
-      Infrastructure: 'construct',       // 🚧 Construction/infrastructure
-      Social: 'people',                  // 👥 Social gathering
-      Emergency: 'warning',              // ⚡ Emergency
-      Weather: 'thunderstorm',           // 🌩️ Weather
-      Fire: 'flame',                     // 🔥 Fire
-      Protest: 'megaphone',              // 📢 Protest
-      Traffic: 'car-sport',              // 🚗 Traffic
-      Health: 'medkit',                  // 🏥 Health/medical
-      Disaster: 'alert-outline',          // ⚠️ Disaster
-      'Natural Disaster': 'earth',       // 🌍 Natural disaster
-      Flood: 'water',                    // 💧 Flood
-      Earthquake: 'pulse',               // 📈 Earthquake
-      default: 'alert-circle'            // ⚠️ Default alert
+      Accident: "car", // 🚗 Car accident
+      Crime: "alert-circle", // ⚠️ Crime/danger
+      Infrastructure: "construct", // 🚧 Construction/infrastructure
+      Social: "people", // 👥 Social gathering
+      Emergency: "warning", // ⚡ Emergency
+      Weather: "thunderstorm", // 🌩️ Weather
+      Fire: "flame", // 🔥 Fire
+      Protest: "megaphone", // 📢 Protest
+      Traffic: "car-sport", // 🚗 Traffic
+      Health: "medkit", // 🏥 Health/medical
+      Disaster: "alert-outline", // ⚠️ Disaster
+      "Natural Disaster": "earth", // 🌍 Natural disaster
+      Flood: "water", // 💧 Flood
+      Earthquake: "pulse", // 📈 Earthquake
+      default: "alert-circle", // ⚠️ Default alert
     };
     return categoryIcons[category] || categoryIcons.default;
   };
 
   const getCredibilityColor = (score) => {
-    if (score >= 0.8) return '#2ECC71';
-    if (score >= 0.6) return '#F39C12';
-    return '#E74C3C';
+    if (score >= 0.8) return "#2ECC71";
+    if (score >= 0.6) return "#F39C12";
+    return "#E74C3C";
   };
 
   const calculateDistance = (lat1, lon1, lat2, lon2) => {
     const R = 6371; // Earth's radius in km
-    const dLat = (lat2 - lat1) * Math.PI / 180;
-    const dLon = (lon2 - lon1) * Math.PI / 180;
-    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-              Math.sin(dLon/2) * Math.sin(dLon/2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    const dLat = ((lat2 - lat1) * Math.PI) / 180;
+    const dLon = ((lon2 - lon1) * Math.PI) / 180;
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos((lat1 * Math.PI) / 180) *
+        Math.cos((lat2 * Math.PI) / 180) *
+        Math.sin(dLon / 2) *
+        Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     return R * c;
   };
 
-  const renderPost = useCallback(({ item }) => {
-    let distance = null;
-    if (userLocation) {
-      distance = calculateDistance(
-        userLocation.latitude,
-        userLocation.longitude,
-        item.location_lat,
-        item.location_lon
-      );
-    }
-
-    // Get location name from cache or use coordinates
-    const cacheKey = `${item.location_lat.toFixed(4)},${item.location_lon.toFixed(4)}`;
-    const incidentLocation = locationCache[cacheKey] || `${item.location_lat.toFixed(2)}°, ${item.location_lon.toFixed(2)}°`;
-
-    // Helper functions for media
-    const getMediaInfo = (media) => {
-      const mediaUrl = typeof media === 'string' 
-        ? media 
-        : (media?.media_url || media?.storage_url);
-      const mediaType = typeof media === 'string' 
-        ? 'image' 
-        : (media?.media_type || 'image');
-      return { mediaUrl, mediaType };
-    };
-
-    const isImageType = (type) => 
-      type === 'image' || type === 'ImageMediaEnum' || type?.includes('image');
-    
-    const isVideoType = (type) => 
-      type === 'video' || type?.includes('video');
-
-    // Render media section
-    const renderMedia = () => {
-      if (!item.media_items || item.media_items.length === 0) return null;
-
-      const mediaToShow = item.media_items.slice(0, 3);
-      const extraCount = item.media_items.length - 3;
-
-      // Collect all image URLs for swipeable gallery
-      const allImageUrls = item.media_items
-        .map(media => {
-          const { mediaUrl, mediaType } = getMediaInfo(media);
-          return isImageType(mediaType) ? mediaUrl : null;
-        })
-        .filter(Boolean);
-
-      // Single media
-      if (mediaToShow.length === 1) {
-        const { mediaUrl, mediaType } = getMediaInfo(mediaToShow[0]);
-        if (mediaUrl && isImageType(mediaType)) {
-          return (
-            <View style={twitterStyles.mediaContainer}>
-              <SmartImage uri={mediaUrl} style={twitterStyles.singleMedia} colors={colors} onPress={() => viewImage(allImageUrls, 0)} />
-            </View>
-          );
-        }
-        if (mediaUrl && isVideoType(mediaType)) {
-          return (
-            <View style={twitterStyles.mediaContainer}>
-              <VideoThumbnail uri={mediaUrl} style={twitterStyles.singleMedia} colors={colors} onPress={() => playVideo(mediaUrl)} />
-            </View>
-          );
-        }
-      }
-
-      // Two media items
-      if (mediaToShow.length === 2) {
-        let imageIndex = 0;
-        return (
-          <View style={[twitterStyles.mediaContainer, twitterStyles.mediaGrid2]}>
-            {mediaToShow.map((media, index) => {
-              const { mediaUrl, mediaType } = getMediaInfo(media);
-              if (mediaUrl && isImageType(mediaType)) {
-                const currentImageIndex = imageIndex++;
-                return <SmartImage key={index} uri={mediaUrl} style={twitterStyles.mediaGrid2Item} colors={colors} onPress={() => viewImage(allImageUrls, currentImageIndex)} />;
-              }
-              if (mediaUrl && isVideoType(mediaType)) {
-                return <VideoThumbnail key={index} uri={mediaUrl} style={twitterStyles.mediaGrid2Item} colors={colors} onPress={() => playVideo(mediaUrl)} />;
-              }
-              return null;
-            })}
-          </View>
+  const renderPost = useCallback(
+    ({ item }) => {
+      let distance = null;
+      if (userLocation) {
+        distance = calculateDistance(
+          userLocation.latitude,
+          userLocation.longitude,
+          item.location_lat,
+          item.location_lon,
         );
       }
 
-      // Three+ media items
-      if (mediaToShow.length >= 3) {
-        const { mediaUrl: url1, mediaType: type1 } = getMediaInfo(mediaToShow[0]);
-        const { mediaUrl: url2, mediaType: type2 } = getMediaInfo(mediaToShow[1]);
-        const { mediaUrl: url3, mediaType: type3 } = getMediaInfo(mediaToShow[2]);
+      // Get location name from cache or use coordinates
+      const cacheKey = `${item.location_lat.toFixed(4)},${item.location_lon.toFixed(4)}`;
+      const incidentLocation =
+        locationCache[cacheKey] ||
+        `${item.location_lat.toFixed(2)}°, ${item.location_lon.toFixed(2)}°`;
 
-        // Calculate image indices for each position
-        let imgIdx = 0;
-        const idx1 = isImageType(type1) ? imgIdx++ : -1;
-        const idx2 = isImageType(type2) ? imgIdx++ : -1;
-        const idx3 = isImageType(type3) ? imgIdx++ : -1;
+      // Helper functions for media
+      const getMediaInfo = (media) => {
+        const mediaUrl =
+          typeof media === "string"
+            ? media
+            : media?.media_url || media?.storage_url;
+        const mediaType =
+          typeof media === "string" ? "image" : media?.media_type || "image";
+        return { mediaUrl, mediaType };
+      };
 
-        return (
-          <View style={[twitterStyles.mediaContainer, twitterStyles.mediaGrid3]}>
-            <View style={twitterStyles.mediaGrid3Left}>
-              {url1 && isImageType(type1) ? (
-                <SmartImage uri={url1} style={twitterStyles.mediaGrid3Large} colors={colors} onPress={() => viewImage(allImageUrls, idx1)} />
-              ) : url1 && isVideoType(type1) ? (
-                <VideoThumbnail uri={url1} style={twitterStyles.mediaGrid3Large} colors={colors} onPress={() => playVideo(url1)} />
-              ) : null}
-            </View>
-            <View style={twitterStyles.mediaGrid3Right}>
-              {url2 && isImageType(type2) ? (
-                <SmartImage uri={url2} style={twitterStyles.mediaGrid3Small} colors={colors} onPress={() => viewImage(allImageUrls, idx2)} />
-              ) : url2 && isVideoType(type2) ? (
-                <VideoThumbnail uri={url2} style={twitterStyles.mediaGrid3Small} colors={colors} onPress={() => playVideo(url2)} />
-              ) : null}
-              <View style={twitterStyles.mediaGrid3SmallWrapper}>
-                {url3 && isImageType(type3) ? (
-                  <SmartImage uri={url3} style={twitterStyles.mediaGrid3Small} colors={colors} onPress={() => viewImage(allImageUrls, idx3)} />
-                ) : url3 && isVideoType(type3) ? (
-                  <VideoThumbnail uri={url3} style={twitterStyles.mediaGrid3Small} colors={colors} onPress={() => playVideo(url3)} />
-                ) : null}
-                {extraCount > 0 && (
-                  <View style={twitterStyles.mediaOverlay}>
-                    <Text style={twitterStyles.mediaOverlayText}>+{extraCount}</Text>
-                  </View>
-                )}
+      const isImageType = (type) =>
+        type === "image" ||
+        type === "ImageMediaEnum" ||
+        type?.includes("image");
+
+      const isVideoType = (type) => type === "video" || type?.includes("video");
+
+      // Render media section
+      const renderMedia = () => {
+        if (!item.media_items || item.media_items.length === 0) return null;
+
+        const mediaToShow = item.media_items.slice(0, 3);
+        const extraCount = item.media_items.length - 3;
+
+        // Collect all image URLs for swipeable gallery
+        const allImageUrls = item.media_items
+          .map((media) => {
+            const { mediaUrl, mediaType } = getMediaInfo(media);
+            return isImageType(mediaType) ? mediaUrl : null;
+          })
+          .filter(Boolean);
+
+        // Single media
+        if (mediaToShow.length === 1) {
+          const { mediaUrl, mediaType } = getMediaInfo(mediaToShow[0]);
+          if (mediaUrl && isImageType(mediaType)) {
+            return (
+              <View style={twitterStyles.mediaContainer}>
+                <SmartImage
+                  uri={mediaUrl}
+                  style={twitterStyles.singleMedia}
+                  colors={colors}
+                  onPress={() => viewImage(allImageUrls, 0)}
+                />
               </View>
-            </View>
-          </View>
-        );
-      }
+            );
+          }
+          if (mediaUrl && isVideoType(mediaType)) {
+            return (
+              <View style={twitterStyles.mediaContainer}>
+                <VideoThumbnail
+                  uri={mediaUrl}
+                  style={twitterStyles.singleMedia}
+                  colors={colors}
+                  onPress={() => playVideo(mediaUrl)}
+                />
+              </View>
+            );
+          }
+        }
 
-      return null;
-    };
-
-    // Get credibility label
-    const getCredibilityLabel = (score) => {
-      if (score >= 0.7) return 'High';
-      if (score >= 0.4) return 'Medium';
-      return 'Low';
-    };
-
-    return (
-      <View style={[twitterStyles.post, { borderBottomColor: colors.border, backgroundColor: colors.surface }]}>
-        <View style={twitterStyles.postContent}>
-          {/* Avatar - Shows category icon with credibility-colored background */}
-          <TouchableOpacity 
-            style={[twitterStyles.avatarPlaceholder, { 
-              backgroundColor: getCredibilityColor(item.credibility_score) + '20',
-              borderWidth: 2,
-              borderColor: getCredibilityColor(item.credibility_score) + '50'
-            }]}
-            onPress={() => showCredibilityInfo(item.credibility_score)}
-            activeOpacity={0.7}
-          >
-            <Ionicons name={getCategoryIcon(item.event_category)} size={20} color={getCategoryColor(item.event_category)} />
-            {/* Credibility indicator dot */}
-            <View style={[twitterStyles.credibilityDot, { backgroundColor: getCredibilityColor(item.credibility_score) }]} />
-          </TouchableOpacity>
-
-          {/* Post Body */}
-          <View style={twitterStyles.postBody}>
-            {/* Header: Category + Time + Distance */}
-            <View style={twitterStyles.postHeader}>
-              <Text style={[twitterStyles.displayName, { color: colors.text }]}>
-                {item.event_category}
-              </Text>
-              <Text style={[twitterStyles.dot, { color: colors.gray }]}>·</Text>
-              <Text style={[twitterStyles.time, { color: colors.gray }]}>
-                {formatTimeAgo(item.created_at)}
-              </Text>
-              {distance && (
-                <>
-                  <Text style={[twitterStyles.dot, { color: colors.gray }]}>·</Text>
-                  <Text style={[twitterStyles.time, { color: colors.gray }]}>
-                    {distance < 1 ? `${Math.round(distance * 1000)}m` : `${distance.toFixed(1)}km`}
-                  </Text>
-                </>
-              )}
-            </View>
-
-            {/* Subtext: Location (tappable with visual hint) */}
-            <TouchableOpacity 
-              style={twitterStyles.locationTouchable}
-              onPress={() => showLocationInfo(incidentLocation, item.location_lat, item.location_lon, distance)}
-              activeOpacity={0.6}
+        // Two media items
+        if (mediaToShow.length === 2) {
+          let imageIndex = 0;
+          return (
+            <View
+              style={[twitterStyles.mediaContainer, twitterStyles.mediaGrid2]}
             >
-              <View style={[twitterStyles.locationPill, { backgroundColor: colors.primary + '10' }]}>
-                <Ionicons name="location" size={12} color={colors.primary} />
-                <Text style={[twitterStyles.locationPillText, { color: colors.primary }]} numberOfLines={1}>
-                  {incidentLocation}
-                </Text>
-                <Ionicons name="chevron-forward" size={12} color={colors.primary} style={{ opacity: 0.6 }} />
+              {mediaToShow.map((media, index) => {
+                const { mediaUrl, mediaType } = getMediaInfo(media);
+                if (mediaUrl && isImageType(mediaType)) {
+                  const currentImageIndex = imageIndex++;
+                  return (
+                    <SmartImage
+                      key={index}
+                      uri={mediaUrl}
+                      style={twitterStyles.mediaGrid2Item}
+                      colors={colors}
+                      onPress={() => viewImage(allImageUrls, currentImageIndex)}
+                    />
+                  );
+                }
+                if (mediaUrl && isVideoType(mediaType)) {
+                  return (
+                    <VideoThumbnail
+                      key={index}
+                      uri={mediaUrl}
+                      style={twitterStyles.mediaGrid2Item}
+                      colors={colors}
+                      onPress={() => playVideo(mediaUrl)}
+                    />
+                  );
+                }
+                return null;
+              })}
+            </View>
+          );
+        }
+
+        // Three+ media items
+        if (mediaToShow.length >= 3) {
+          const { mediaUrl: url1, mediaType: type1 } = getMediaInfo(
+            mediaToShow[0],
+          );
+          const { mediaUrl: url2, mediaType: type2 } = getMediaInfo(
+            mediaToShow[1],
+          );
+          const { mediaUrl: url3, mediaType: type3 } = getMediaInfo(
+            mediaToShow[2],
+          );
+
+          // Calculate image indices for each position
+          let imgIdx = 0;
+          const idx1 = isImageType(type1) ? imgIdx++ : -1;
+          const idx2 = isImageType(type2) ? imgIdx++ : -1;
+          const idx3 = isImageType(type3) ? imgIdx++ : -1;
+
+          return (
+            <View
+              style={[twitterStyles.mediaContainer, twitterStyles.mediaGrid3]}
+            >
+              <View style={twitterStyles.mediaGrid3Left}>
+                {url1 && isImageType(type1) ? (
+                  <SmartImage
+                    uri={url1}
+                    style={twitterStyles.mediaGrid3Large}
+                    colors={colors}
+                    onPress={() => viewImage(allImageUrls, idx1)}
+                  />
+                ) : url1 && isVideoType(type1) ? (
+                  <VideoThumbnail
+                    uri={url1}
+                    style={twitterStyles.mediaGrid3Large}
+                    colors={colors}
+                    onPress={() => playVideo(url1)}
+                  />
+                ) : null}
               </View>
+              <View style={twitterStyles.mediaGrid3Right}>
+                {url2 && isImageType(type2) ? (
+                  <SmartImage
+                    uri={url2}
+                    style={twitterStyles.mediaGrid3Small}
+                    colors={colors}
+                    onPress={() => viewImage(allImageUrls, idx2)}
+                  />
+                ) : url2 && isVideoType(type2) ? (
+                  <VideoThumbnail
+                    uri={url2}
+                    style={twitterStyles.mediaGrid3Small}
+                    colors={colors}
+                    onPress={() => playVideo(url2)}
+                  />
+                ) : null}
+                <View style={twitterStyles.mediaGrid3SmallWrapper}>
+                  {url3 && isImageType(type3) ? (
+                    <SmartImage
+                      uri={url3}
+                      style={twitterStyles.mediaGrid3Small}
+                      colors={colors}
+                      onPress={() => viewImage(allImageUrls, idx3)}
+                    />
+                  ) : url3 && isVideoType(type3) ? (
+                    <VideoThumbnail
+                      uri={url3}
+                      style={twitterStyles.mediaGrid3Small}
+                      colors={colors}
+                      onPress={() => playVideo(url3)}
+                    />
+                  ) : null}
+                  {extraCount > 0 && (
+                    <View style={twitterStyles.mediaOverlay}>
+                      <Text style={twitterStyles.mediaOverlayText}>
+                        +{extraCount}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              </View>
+            </View>
+          );
+        }
+
+        return null;
+      };
+
+      // Get credibility label
+      const getCredibilityLabel = (score) => {
+        if (score >= 0.7) return "High";
+        if (score >= 0.4) return "Medium";
+        return "Low";
+      };
+
+      return (
+        <Pressable
+          style={[
+            twitterStyles.post,
+            {
+              borderBottomColor: colors.border,
+              backgroundColor: colors.surface,
+            },
+          ]}
+          onPress={() =>
+            navigation.navigate("PostDetails", { postId: item.id })
+          }
+        >
+          <View style={twitterStyles.postContent}>
+            {/* Avatar - Shows category icon with credibility-colored background */}
+            <TouchableOpacity
+              style={[
+                twitterStyles.avatarPlaceholder,
+                {
+                  backgroundColor:
+                    getCredibilityColor(item.credibility_score) + "20",
+                  borderWidth: 2,
+                  borderColor:
+                    getCredibilityColor(item.credibility_score) + "50",
+                },
+              ]}
+              onPress={() => showCredibilityInfo(item.credibility_score)}
+              activeOpacity={0.7}
+            >
+              <Ionicons
+                name={getCategoryIcon(item.event_category)}
+                size={20}
+                color={getCategoryColor(item.event_category)}
+              />
+              {/* Credibility indicator dot */}
+              <View
+                style={[
+                  twitterStyles.credibilityDot,
+                  {
+                    backgroundColor: getCredibilityColor(
+                      item.credibility_score,
+                    ),
+                  },
+                ]}
+              />
             </TouchableOpacity>
 
-            {/* Content */}
-            <Text style={[twitterStyles.contentText, { color: colors.text }]}>
-              {item.content}
-            </Text>
+            {/* Post Body */}
+            <View style={twitterStyles.postBody}>
+              {/* Header: Category + Time + Distance */}
+              <View style={twitterStyles.postHeader}>
+                <Text
+                  style={[twitterStyles.displayName, { color: colors.text }]}
+                >
+                  {item.event_category}
+                </Text>
+                <Text style={[twitterStyles.dot, { color: colors.gray }]}>
+                  ·
+                </Text>
+                <Text style={[twitterStyles.time, { color: colors.gray }]}>
+                  {formatTimeAgo(item.created_at)}
+                </Text>
+                {distance && (
+                  <>
+                    <Text style={[twitterStyles.dot, { color: colors.gray }]}>
+                      ·
+                    </Text>
+                    <Text style={[twitterStyles.time, { color: colors.gray }]}>
+                      {distance < 1
+                        ? `${Math.round(distance * 1000)}m`
+                        : `${distance.toFixed(1)}km`}
+                    </Text>
+                  </>
+                )}
+              </View>
 
-            {/* Media */}
-            {renderMedia()}
+              {/* Subtext: Location (tappable with visual hint) */}
+              <TouchableOpacity
+                style={twitterStyles.locationTouchable}
+                onPress={() =>
+                  showLocationInfo(
+                    incidentLocation,
+                    item.location_lat,
+                    item.location_lon,
+                    distance,
+                  )
+                }
+                activeOpacity={0.6}
+              >
+                <View
+                  style={[
+                    twitterStyles.locationPill,
+                    { backgroundColor: colors.primary + "10" },
+                  ]}
+                >
+                  <Ionicons name="location" size={12} color={colors.primary} />
+                  <Text
+                    style={[
+                      twitterStyles.locationPillText,
+                      { color: colors.primary },
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {incidentLocation}
+                  </Text>
+                  <Ionicons
+                    name="chevron-forward"
+                    size={12}
+                    color={colors.primary}
+                    style={{ opacity: 0.6 }}
+                  />
+                </View>
+              </TouchableOpacity>
 
-            {/* Action Bar */}
-            <PostInteractions
-              postId={item.id}
-              initialUpvotes={item.upvotes || 0}
-              initialDownvotes={item.downvotes || 0}
-              initialFlags={item.flags || 0}
-              initialUserVote={item.user_vote || null}
-              initialUserFlagged={item.user_flagged || false}
-              colors={colors}
-              onInteractionError={(message) => Alert.alert('Error', message)}
-            />
+              {/* Content */}
+              <Text style={[twitterStyles.contentText, { color: colors.text }]}>
+                {item.content}
+              </Text>
+
+              {/* Media */}
+              {renderMedia()}
+
+              {/* Action Bar */}
+              <PostInteractions
+                postId={item.id}
+                initialUpvotes={item.upvotes || 0}
+                initialDownvotes={item.downvotes || 0}
+                initialFlags={item.flags || 0}
+                initialUserVote={item.user_vote || null}
+                initialUserFlagged={item.user_flagged || false}
+                colors={colors}
+                onInteractionError={(message) => Alert.alert("Error", message)}
+                onCommentPress={() =>
+                  navigation.navigate("PostDetails", {
+                    postId: item.id,
+                    focusComment: true,
+                  })
+                }
+              />
+            </View>
           </View>
-        </View>
-      </View>
-    );
-  }, [userLocation, locationCache, colors, playVideo, showCredibilityInfo, showLocationInfo]);
+        </Pressable>
+      );
+    },
+    [
+      userLocation,
+      locationCache,
+      colors,
+      playVideo,
+      showCredibilityInfo,
+      showLocationInfo,
+      navigation,
+    ],
+  );
 
   if (!locationPermission) {
     return (
-      <View style={[styles.centerContainer, { backgroundColor: colors.background }]}>
+      <View
+        style={[styles.centerContainer, { backgroundColor: colors.background }]}
+      >
         <Ionicons name="location-outline" size={64} color={colors.gray} />
         <Text style={[styles.emptyText, { color: colors.text, marginTop: 16 }]}>
           Location Permission Required
         </Text>
-        <Text style={[styles.emptySubtext, { color: colors.gray, marginTop: 8 }]}>
+        <Text
+          style={[styles.emptySubtext, { color: colors.gray, marginTop: 8 }]}
+        >
           Enable location to see posts near you
         </Text>
-        <TouchableOpacity 
+        <TouchableOpacity
           style={[styles.retryButton, { backgroundColor: colors.primary }]}
           onPress={requestLocationPermission}
         >
@@ -1564,20 +1921,40 @@ export default function HomeScreen() {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
         {/* Location Bar (same as main view) */}
-        <View style={[styles.locationBar, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
+        <View
+          style={[
+            styles.locationBar,
+            {
+              backgroundColor: colors.surface,
+              borderBottomColor: colors.border,
+            },
+          ]}
+        >
           <View style={styles.locationInfo}>
-            <Ionicons 
-              name="location-outline" 
-              size={18} 
-              color={colors.gray} 
+            <Ionicons name="location-outline" size={18} color={colors.gray} />
+            <View
+              style={{
+                width: 120,
+                height: 16,
+                backgroundColor: colors.border,
+                borderRadius: 4,
+              }}
             />
-            <View style={{ width: 120, height: 16, backgroundColor: colors.border, borderRadius: 4 }} />
           </View>
-          <View style={[styles.locationButton, { backgroundColor: colors.border }]}>
-            <View style={{ width: 100, height: 16, backgroundColor: colors.border, borderRadius: 4 }} />
+          <View
+            style={[styles.locationButton, { backgroundColor: colors.border }]}
+          >
+            <View
+              style={{
+                width: 100,
+                height: 16,
+                backgroundColor: colors.border,
+                borderRadius: 4,
+              }}
+            />
           </View>
         </View>
-        
+
         {/* Skeleton Cards - Twitter Style */}
         <FlatList
           data={[1, 2, 3, 4, 5]}
@@ -1592,15 +1969,27 @@ export default function HomeScreen() {
   // Error state
   if (error && posts.length === 0) {
     return (
-      <View style={[styles.centerContainer, { backgroundColor: colors.background }]}>
+      <View
+        style={[styles.centerContainer, { backgroundColor: colors.background }]}
+      >
         <Ionicons name="alert-circle-outline" size={64} color="#E74C3C" />
         <Text style={[styles.emptyText, { color: colors.text, marginTop: 16 }]}>
           Failed to load feed
         </Text>
-        <Text style={[styles.emptySubtext, { color: colors.gray, marginTop: 8, textAlign: 'center', paddingHorizontal: 20 }]}>
+        <Text
+          style={[
+            styles.emptySubtext,
+            {
+              color: colors.gray,
+              marginTop: 8,
+              textAlign: "center",
+              paddingHorizontal: 20,
+            },
+          ]}
+        >
           {error}
         </Text>
-        <TouchableOpacity 
+        <TouchableOpacity
           style={[styles.retryButton, { backgroundColor: colors.primary }]}
           onPress={loadFeed}
         >
@@ -1613,32 +2002,57 @@ export default function HomeScreen() {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Location Bar - Modern Design */}
-      <View style={[styles.locationBar, { backgroundColor: isDark ? '#1a1a1a' : '#f8f9fa' }]}>
-        <TouchableOpacity 
-          style={[styles.locationInfo, { backgroundColor: isDark ? '#252525' : '#fff' }]}
+      <View
+        style={[
+          styles.locationBar,
+          { backgroundColor: isDark ? "#1a1a1a" : "#f8f9fa" },
+        ]}
+      >
+        <TouchableOpacity
+          style={[
+            styles.locationInfo,
+            { backgroundColor: isDark ? "#252525" : "#fff" },
+          ]}
           onPress={refreshLocation}
           disabled={isLoadingLocation}
           activeOpacity={0.7}
         >
-          <View style={[styles.locationIconContainer, { backgroundColor: isUsingRealLocation ? colors.primary + '15' : colors.gray + '15' }]}>
-            <Ionicons 
-              name={isUsingRealLocation ? "location" : "location-outline"} 
-              size={16} 
-              color={isUsingRealLocation ? colors.primary : colors.gray} 
+          <View
+            style={[
+              styles.locationIconContainer,
+              {
+                backgroundColor: isUsingRealLocation
+                  ? colors.primary + "15"
+                  : colors.gray + "15",
+              },
+            ]}
+          >
+            <Ionicons
+              name={isUsingRealLocation ? "location" : "location-outline"}
+              size={16}
+              color={isUsingRealLocation ? colors.primary : colors.gray}
             />
           </View>
           <View style={styles.locationTextContainer}>
             <Text style={[styles.locationLabel, { color: colors.gray }]}>
-              {isUsingRealLocation ? 'Your Location' : 'Default Location'}
+              {isUsingRealLocation ? "Your Location" : "Default Location"}
             </Text>
-            <Text style={[styles.locationBarText, { color: colors.text }]} numberOfLines={1}>
+            <Text
+              style={[styles.locationBarText, { color: colors.text }]}
+              numberOfLines={1}
+            >
               {locationName}
             </Text>
           </View>
           {isLoadingLocation ? (
             <ActivityIndicator size="small" color={colors.primary} />
           ) : (
-            <View style={[styles.refreshButton, { backgroundColor: colors.primary }]}>
+            <View
+              style={[
+                styles.refreshButton,
+                { backgroundColor: colors.primary },
+              ]}
+            >
               <Ionicons name="navigate" size={14} color="#fff" />
             </View>
           )}
@@ -1709,39 +2123,81 @@ export default function HomeScreen() {
         animationType="fade"
         onRequestClose={() => setCredibilityModal({ visible: false, score: 0 })}
       >
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.credibilityOverlay}
           activeOpacity={1}
           onPress={() => setCredibilityModal({ visible: false, score: 0 })}
         >
-          <View style={[styles.credibilityCard, { backgroundColor: colors.surface }]}>
+          <View
+            style={[
+              styles.credibilityCard,
+              { backgroundColor: colors.surface },
+            ]}
+          >
             {/* Circular Progress Indicator */}
             <View style={styles.credibilityCircleContainer}>
-              <View style={[styles.credibilityCircle, { 
-                borderColor: getCredibilityColor(credibilityModal.score),
-                backgroundColor: getCredibilityColor(credibilityModal.score) + '15'
-              }]}>
-                <Text style={[styles.credibilityPercentage, { color: getCredibilityColor(credibilityModal.score) }]}>
+              <View
+                style={[
+                  styles.credibilityCircle,
+                  {
+                    borderColor: getCredibilityColor(credibilityModal.score),
+                    backgroundColor:
+                      getCredibilityColor(credibilityModal.score) + "15",
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.credibilityPercentage,
+                    { color: getCredibilityColor(credibilityModal.score) },
+                  ]}
+                >
                   {Math.round(credibilityModal.score * 100)}%
                 </Text>
               </View>
             </View>
 
             {/* Label */}
-            <View style={[styles.credibilityLabelBadge, { backgroundColor: getCredibilityColor(credibilityModal.score) + '20' }]}>
-              <Ionicons 
-                name={credibilityModal.score >= 0.7 ? "shield-checkmark" : credibilityModal.score >= 0.4 ? "shield-half" : "shield-outline"} 
-                size={16} 
-                color={getCredibilityColor(credibilityModal.score)} 
+            <View
+              style={[
+                styles.credibilityLabelBadge,
+                {
+                  backgroundColor:
+                    getCredibilityColor(credibilityModal.score) + "20",
+                },
+              ]}
+            >
+              <Ionicons
+                name={
+                  credibilityModal.score >= 0.7
+                    ? "shield-checkmark"
+                    : credibilityModal.score >= 0.4
+                      ? "shield-half"
+                      : "shield-outline"
+                }
+                size={16}
+                color={getCredibilityColor(credibilityModal.score)}
               />
-              <Text style={[styles.credibilityLabel, { color: getCredibilityColor(credibilityModal.score) }]}>
-                {credibilityModal.score >= 0.7 ? 'High Credibility' : credibilityModal.score >= 0.4 ? 'Medium Credibility' : 'Low Credibility'}
+              <Text
+                style={[
+                  styles.credibilityLabel,
+                  { color: getCredibilityColor(credibilityModal.score) },
+                ]}
+              >
+                {credibilityModal.score >= 0.7
+                  ? "High Credibility"
+                  : credibilityModal.score >= 0.4
+                    ? "Medium Credibility"
+                    : "Low Credibility"}
               </Text>
             </View>
 
             {/* Description */}
-            <Text style={[styles.credibilityDescription, { color: colors.gray }]}>
-              This score is calculated using AI analysis of media authenticity, content verification, and community feedback.
+            <Text
+              style={[styles.credibilityDescription, { color: colors.gray }]}
+            >
+              This score is calculated using AI analysis of media authenticity,
+              content verification, and community feedback.
             </Text>
 
             {/* Tap to dismiss hint */}
@@ -1757,16 +2213,25 @@ export default function HomeScreen() {
         visible={locationModal.visible}
         transparent={true}
         animationType="fade"
-        onRequestClose={() => setLocationModal({ ...locationModal, visible: false })}
+        onRequestClose={() =>
+          setLocationModal({ ...locationModal, visible: false })
+        }
       >
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.credibilityOverlay}
           activeOpacity={1}
           onPress={() => setLocationModal({ ...locationModal, visible: false })}
         >
-          <View style={[styles.locationCard, { backgroundColor: colors.surface }]}>
+          <View
+            style={[styles.locationCard, { backgroundColor: colors.surface }]}
+          >
             {/* Map Pin Icon */}
-            <View style={[styles.locationIconCircle, { backgroundColor: colors.primary + '15' }]}>
+            <View
+              style={[
+                styles.locationIconCircle,
+                { backgroundColor: colors.primary + "15" },
+              ]}
+            >
               <Ionicons name="location" size={32} color={colors.primary} />
             </View>
 
@@ -1776,16 +2241,30 @@ export default function HomeScreen() {
             </Text>
 
             {/* Coordinates */}
-            <View style={[styles.coordinatesContainer, { backgroundColor: colors.border + '50' }]}>
+            <View
+              style={[
+                styles.coordinatesContainer,
+                { backgroundColor: colors.border + "50" },
+              ]}
+            >
               <View style={styles.coordinateRow}>
-                <Text style={[styles.coordinateLabel, { color: colors.gray }]}>Latitude</Text>
+                <Text style={[styles.coordinateLabel, { color: colors.gray }]}>
+                  Latitude
+                </Text>
                 <Text style={[styles.coordinateValue, { color: colors.text }]}>
                   {locationModal.lat.toFixed(6)}°
                 </Text>
               </View>
-              <View style={[styles.coordinateDivider, { backgroundColor: colors.border }]} />
+              <View
+                style={[
+                  styles.coordinateDivider,
+                  { backgroundColor: colors.border },
+                ]}
+              />
               <View style={styles.coordinateRow}>
-                <Text style={[styles.coordinateLabel, { color: colors.gray }]}>Longitude</Text>
+                <Text style={[styles.coordinateLabel, { color: colors.gray }]}>
+                  Longitude
+                </Text>
                 <Text style={[styles.coordinateValue, { color: colors.text }]}>
                   {locationModal.lon.toFixed(6)}°
                 </Text>
@@ -1794,18 +2273,28 @@ export default function HomeScreen() {
 
             {/* Distance Badge */}
             {locationModal.distance && (
-              <View style={[styles.distanceBadge, { backgroundColor: colors.primary }]}>
+              <View
+                style={[
+                  styles.distanceBadge,
+                  { backgroundColor: colors.primary },
+                ]}
+              >
                 <Ionicons name="navigate" size={14} color="#fff" />
                 <Text style={styles.distanceText}>
-                  {locationModal.distance < 1 
-                    ? `${Math.round(locationModal.distance * 1000)} meters away` 
+                  {locationModal.distance < 1
+                    ? `${Math.round(locationModal.distance * 1000)} meters away`
                     : `${locationModal.distance.toFixed(1)} km away`}
                 </Text>
               </View>
             )}
 
             {/* Tap to dismiss hint */}
-            <Text style={[styles.credibilityHint, { color: colors.gray, marginTop: 16 }]}>
+            <Text
+              style={[
+                styles.credibilityHint,
+                { color: colors.gray, marginTop: 16 },
+              ]}
+            >
               Tap anywhere to dismiss
             </Text>
           </View>
@@ -1824,13 +2313,13 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   locationInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     paddingHorizontal: 14,
     paddingVertical: 12,
     borderRadius: 14,
     gap: 12,
-    shadowColor: '#000',
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
     shadowRadius: 3,
@@ -1840,29 +2329,29 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 10,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
   },
   locationTextContainer: {
     flex: 1,
   },
   locationLabel: {
     fontSize: 11,
-    fontWeight: '500',
-    textTransform: 'uppercase',
+    fontWeight: "500",
+    textTransform: "uppercase",
     letterSpacing: 0.5,
     marginBottom: 2,
   },
   locationBarText: {
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   refreshButton: {
     width: 32,
     height: 32,
     borderRadius: 10,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
   },
   defaultBadge: {
     paddingHorizontal: 8,
@@ -1871,25 +2360,25 @@ const styles = StyleSheet.create({
   },
   defaultBadgeText: {
     fontSize: 11,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   locationButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 6,
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 20,
   },
   locationButtonText: {
-    color: '#fff',
+    color: "#fff",
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   centerContainer: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     padding: 20,
   },
   loadingText: {
@@ -1897,8 +2386,8 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   searchBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     paddingHorizontal: 16,
     paddingVertical: 12,
     gap: 12,
@@ -1906,8 +2395,8 @@ const styles = StyleSheet.create({
   },
   searchInput: {
     flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderRadius: 10,
@@ -1921,34 +2410,34 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     paddingHorizontal: 20,
     paddingVertical: 16,
     borderBottomWidth: 1,
   },
   headerTitle: {
     fontSize: 24,
-    fontWeight: '700',
+    fontWeight: "700",
   },
   headerSubtitle: {
     fontSize: 12,
     marginTop: 4,
   },
   radiusButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 6,
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.1)',
+    borderColor: "rgba(0,0,0,0.1)",
   },
   radiusText: {
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   categoryContainer: {
     maxHeight: 60,
@@ -1959,8 +2448,8 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   categoryChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 6,
     paddingHorizontal: 16,
     paddingVertical: 10,
@@ -1970,7 +2459,7 @@ const styles = StyleSheet.create({
   },
   categoryChipText: {
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   feedList: {
     padding: 16,
@@ -1980,50 +2469,50 @@ const styles = StyleSheet.create({
     padding: 16,
     marginBottom: 16,
     borderWidth: 1,
-    shadowColor: '#000',
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
   },
   topRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     marginBottom: 8,
   },
   locationHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 4,
     flex: 1,
   },
   locationText: {
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   credibilityBar: {
     marginBottom: 12,
   },
   credibilityBarBg: {
     height: 6,
-    backgroundColor: 'rgba(128, 128, 128, 0.2)',
+    backgroundColor: "rgba(128, 128, 128, 0.2)",
     borderRadius: 3,
-    overflow: 'hidden',
+    overflow: "hidden",
     marginBottom: 6,
   },
   credibilityBarFill: {
-    height: '100%',
+    height: "100%",
     borderRadius: 3,
   },
   credibilityInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 4,
   },
   credibilityPercentText: {
     fontSize: 12,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   categoryBadge: {
     paddingHorizontal: 12,
@@ -2032,11 +2521,11 @@ const styles = StyleSheet.create({
   },
   categoryText: {
     fontSize: 11,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   distanceText: {
     fontSize: 11,
-    fontWeight: '500',
+    fontWeight: "500",
   },
   timeText: {
     fontSize: 11,
@@ -2047,14 +2536,14 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   mediaImage: {
-    width: '100%',
+    width: "100%",
     height: 200,
     borderRadius: 8,
     marginBottom: 12,
   },
   // Two image grid
   mediaGrid2: {
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: 4,
     marginBottom: 12,
   },
@@ -2065,7 +2554,7 @@ const styles = StyleSheet.create({
   },
   // Three image grid
   mediaGrid3: {
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: 4,
     height: 200,
     marginBottom: 12,
@@ -2074,8 +2563,8 @@ const styles = StyleSheet.create({
     flex: 2,
   },
   mediaGrid3Large: {
-    width: '100%',
-    height: '100%',
+    width: "100%",
+    height: "100%",
     borderRadius: 8,
   },
   mediaGrid3Right: {
@@ -2083,44 +2572,44 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   mediaGrid3Small: {
-    width: '100%',
-    height: '100%',
+    width: "100%",
+    height: "100%",
     borderRadius: 8,
   },
   mediaGrid3SmallWrapper: {
     flex: 1,
-    position: 'relative',
+    position: "relative",
   },
   mediaOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
     borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
   },
   mediaOverlayText: {
-    color: '#fff',
+    color: "#fff",
     fontSize: 24,
-    fontWeight: '700',
+    fontWeight: "700",
   },
   postFooter: {
     paddingTop: 12,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(128, 128, 128, 0.2)',
+    borderTopColor: "rgba(128, 128, 128, 0.2)",
   },
   votingContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 20,
   },
   voteButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 4,
   },
   commentButton: {
     padding: 4,
-    marginLeft: 'auto',
+    marginLeft: "auto",
   },
   flagButton: {
     padding: 4,
@@ -2128,17 +2617,17 @@ const styles = StyleSheet.create({
   },
   voteText: {
     fontSize: 14,
-    fontWeight: '500',
+    fontWeight: "500",
   },
   emptyContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     paddingVertical: 60,
   },
   emptyText: {
     fontSize: 16,
     marginTop: 12,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   emptySubtext: {
     fontSize: 14,
@@ -2151,31 +2640,31 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   retryButtonText: {
-    color: '#fff',
+    color: "#fff",
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   // Video Modal Styles
   videoModalContainer: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.95)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: "rgba(0, 0, 0, 0.95)",
+    justifyContent: "center",
+    alignItems: "center",
   },
   videoCloseButton: {
-    position: 'absolute',
+    position: "absolute",
     top: 50,
     right: 20,
     zIndex: 10,
     padding: 10,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
     borderRadius: 25,
   },
   videoWrapper: {
     width: SCREEN_WIDTH,
     height: SCREEN_HEIGHT * 0.7,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
   },
   videoPlayer: {
     width: SCREEN_WIDTH,
@@ -2183,39 +2672,39 @@ const styles = StyleSheet.create({
   },
   videoLoadingOverlay: {
     ...StyleSheet.absoluteFillObject,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
   },
   videoErrorContainer: {
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     padding: 40,
   },
   videoErrorText: {
-    color: '#fff',
+    color: "#fff",
     fontSize: 18,
     marginTop: 16,
-    textAlign: 'center',
+    textAlign: "center",
   },
   videoRetryButton: {
     marginTop: 20,
     paddingHorizontal: 24,
     paddingVertical: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
     borderRadius: 8,
   },
   videoRetryText: {
-    color: '#fff',
+    color: "#fff",
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   // Image viewer styles
   imageViewerWrapper: {
     width: SCREEN_WIDTH,
     height: SCREEN_HEIGHT,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
   },
   fullscreenImage: {
     width: SCREEN_WIDTH,
@@ -2224,41 +2713,41 @@ const styles = StyleSheet.create({
   imageSlide: {
     width: SCREEN_WIDTH,
     height: SCREEN_HEIGHT,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
   },
   imageCounter: {
-    position: 'absolute',
+    position: "absolute",
     top: 50,
     left: 20,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    backgroundColor: "rgba(0, 0, 0, 0.6)",
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 16,
     zIndex: 10,
   },
   imageCounterText: {
-    color: '#fff',
+    color: "#fff",
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   paginationDots: {
-    position: 'absolute',
+    position: "absolute",
     bottom: 50,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    width: '100%',
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    width: "100%",
   },
   paginationDot: {
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: 'rgba(255, 255, 255, 0.4)',
+    backgroundColor: "rgba(255, 255, 255, 0.4)",
     marginHorizontal: 4,
   },
   paginationDotActive: {
-    backgroundColor: '#fff',
+    backgroundColor: "#fff",
     width: 10,
     height: 10,
     borderRadius: 5,
@@ -2266,18 +2755,18 @@ const styles = StyleSheet.create({
   // Credibility Modal Styles
   credibilityOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: "rgba(0, 0, 0, 0.6)",
+    justifyContent: "center",
+    alignItems: "center",
     padding: 24,
   },
   credibilityCard: {
-    width: '100%',
+    width: "100%",
     maxWidth: 300,
     borderRadius: 24,
     padding: 28,
-    alignItems: 'center',
-    shadowColor: '#000',
+    alignItems: "center",
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.25,
     shadowRadius: 20,
@@ -2291,16 +2780,16 @@ const styles = StyleSheet.create({
     height: 100,
     borderRadius: 50,
     borderWidth: 4,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
   },
   credibilityPercentage: {
     fontSize: 32,
-    fontWeight: '800',
+    fontWeight: "800",
   },
   credibilityLabelBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 20,
@@ -2309,11 +2798,11 @@ const styles = StyleSheet.create({
   },
   credibilityLabel: {
     fontSize: 15,
-    fontWeight: '700',
+    fontWeight: "700",
   },
   credibilityDescription: {
     fontSize: 13,
-    textAlign: 'center',
+    textAlign: "center",
     lineHeight: 20,
     marginBottom: 16,
   },
@@ -2323,12 +2812,12 @@ const styles = StyleSheet.create({
   },
   // Location Modal Styles
   locationCard: {
-    width: '100%',
+    width: "100%",
     maxWidth: 320,
     borderRadius: 24,
     padding: 28,
-    alignItems: 'center',
-    shadowColor: '#000',
+    alignItems: "center",
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.25,
     shadowRadius: 20,
@@ -2338,54 +2827,54 @@ const styles = StyleSheet.create({
     width: 70,
     height: 70,
     borderRadius: 35,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     marginBottom: 16,
   },
   locationTitle: {
     fontSize: 18,
-    fontWeight: '700',
-    textAlign: 'center',
+    fontWeight: "700",
+    textAlign: "center",
     marginBottom: 20,
   },
   coordinatesContainer: {
-    width: '100%',
+    width: "100%",
     borderRadius: 16,
-    overflow: 'hidden',
+    overflow: "hidden",
     marginBottom: 16,
   },
   coordinateRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     paddingHorizontal: 16,
     paddingVertical: 12,
   },
   coordinateLabel: {
     fontSize: 13,
-    fontWeight: '500',
+    fontWeight: "500",
   },
   coordinateValue: {
     fontSize: 13,
-    fontWeight: '600',
-    fontFamily: 'monospace',
+    fontWeight: "600",
+    fontFamily: "monospace",
   },
   coordinateDivider: {
     height: 1,
-    width: '100%',
+    width: "100%",
   },
   distanceBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 20,
     gap: 8,
   },
   distanceText: {
-    color: '#fff',
+    color: "#fff",
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: "600",
   },
 });
 
@@ -2398,7 +2887,7 @@ const twitterStyles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   postContent: {
-    flexDirection: 'row',
+    flexDirection: "row",
   },
   // Avatar
   avatar: {
@@ -2412,8 +2901,8 @@ const twitterStyles = StyleSheet.create({
     height: 40,
     borderRadius: 20,
     marginRight: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
   },
   avatarSkeleton: {
     width: 40,
@@ -2427,14 +2916,14 @@ const twitterStyles = StyleSheet.create({
   },
   // Header row: name, handle, time
   postHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexWrap: 'wrap',
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
     marginBottom: 2,
   },
   displayName: {
     fontSize: 15,
-    fontWeight: '700',
+    fontWeight: "700",
   },
   handle: {
     fontSize: 14,
@@ -2454,33 +2943,33 @@ const twitterStyles = StyleSheet.create({
   },
   // Location pill (tappable with visual hint)
   locationTouchable: {
-    alignSelf: 'flex-start',
+    alignSelf: "flex-start",
     marginBottom: 8,
   },
   locationPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 14,
     gap: 5,
-    maxWidth: '100%',
+    maxWidth: "100%",
   },
   locationPillText: {
     fontSize: 12,
-    fontWeight: '500',
+    fontWeight: "500",
     flexShrink: 1,
   },
   // Credibility indicator dot on avatar
   credibilityDot: {
-    position: 'absolute',
+    position: "absolute",
     bottom: 0,
     right: 0,
     width: 12,
     height: 12,
     borderRadius: 6,
     borderWidth: 2,
-    borderColor: '#fff',
+    borderColor: "#fff",
   },
   // Category badge (inline)
   categoryBadge: {
@@ -2491,18 +2980,18 @@ const twitterStyles = StyleSheet.create({
   },
   categoryText: {
     fontSize: 11,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   // Location & credibility row
   metaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     marginBottom: 8,
-    flexWrap: 'wrap',
+    flexWrap: "wrap",
   },
   locationBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 12,
@@ -2511,11 +3000,11 @@ const twitterStyles = StyleSheet.create({
   locationText: {
     fontSize: 12,
     marginLeft: 4,
-    fontWeight: '500',
+    fontWeight: "500",
   },
   credibilityBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 12,
@@ -2523,7 +3012,7 @@ const twitterStyles = StyleSheet.create({
   credibilityText: {
     fontSize: 12,
     marginLeft: 4,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   // Content text
   contentText: {
@@ -2534,71 +3023,71 @@ const twitterStyles = StyleSheet.create({
   // Media
   mediaContainer: {
     borderRadius: 16,
-    overflow: 'hidden',
+    overflow: "hidden",
     marginBottom: 12,
   },
   singleMedia: {
-    width: '100%',
+    width: "100%",
     height: 200,
     borderRadius: 16,
   },
   mediaGrid2: {
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: 2,
     borderRadius: 16,
-    overflow: 'hidden',
+    overflow: "hidden",
   },
   mediaGrid2Item: {
     flex: 1,
     height: 180,
   },
   mediaGrid3: {
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: 2,
     height: 200,
     borderRadius: 16,
-    overflow: 'hidden',
+    overflow: "hidden",
   },
   mediaGrid3Left: {
     flex: 2,
   },
   mediaGrid3Large: {
-    width: '100%',
-    height: '100%',
+    width: "100%",
+    height: "100%",
   },
   mediaGrid3Right: {
     flex: 1,
     gap: 2,
   },
   mediaGrid3Small: {
-    width: '100%',
-    height: '100%',
+    width: "100%",
+    height: "100%",
   },
   mediaGrid3SmallWrapper: {
     flex: 1,
-    position: 'relative',
+    position: "relative",
   },
   mediaOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    justifyContent: "center",
+    alignItems: "center",
   },
   mediaOverlayText: {
-    color: '#fff',
+    color: "#fff",
     fontSize: 22,
-    fontWeight: '700',
+    fontWeight: "700",
   },
   // Action bar
   actionBar: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    justifyContent: "space-between",
     marginTop: 4,
     paddingRight: 48,
   },
   actionButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     padding: 8,
     marginLeft: -8,
   },
@@ -2608,8 +3097,8 @@ const twitterStyles = StyleSheet.create({
   },
   // Skeleton styles
   skeletonHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     marginBottom: 8,
   },
   skeletonName: {
@@ -2629,15 +3118,15 @@ const twitterStyles = StyleSheet.create({
     marginBottom: 8,
   },
   skeletonMedia: {
-    width: '100%',
+    width: "100%",
     height: 180,
     borderRadius: 16,
     marginTop: 4,
     marginBottom: 8,
   },
   skeletonActions: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    justifyContent: "space-between",
     paddingRight: 48,
     marginTop: 8,
   },
