@@ -28,6 +28,7 @@ import ProfileScreen from "./screens/ProfileScreen";
 import ReportScreen from "./screens/ReportScreen";
 import SettingsScreen from "./screens/SettingsScreen";
 import SignupScreen from "./screens/SignupScreen";
+import RoutingScreen from "./src/screens/RoutingScreen";
 import { ThemeProvider, useTheme } from "./styles/ThemeContext";
 
 const Tab = createBottomTabNavigator();
@@ -587,6 +588,7 @@ function MainNavigator() {
           if (route.name === "Home") iconName = "home-outline";
           else if (route.name === "Report") iconName = "document-text-outline";
           else if (route.name === "Discover") iconName = "compass-outline";
+          else if (route.name === "Navigate") iconName = "navigate-outline";
           else if (route.name === "Profile") iconName = "person-circle-outline";
           return <Ionicons name={iconName} size={size} color={color} />;
         },
@@ -606,6 +608,14 @@ function MainNavigator() {
         name="Discover"
         component={DiscoverScreen}
         options={{ title: "Discover" }}
+      />
+      <Tab.Screen
+        name="Navigate"
+        component={RoutingScreen}
+        options={{
+          title: "Navigate",
+          headerShown: false,
+        }}
       />
       <Tab.Screen
         name="Profile"
@@ -628,6 +638,16 @@ function AuthenticatedNavigator() {
       />
       <Stack.Screen
         name="PostDetails"
+        component={PostDetailsScreen}
+        options={{
+          title: "Post Details",
+          headerStyle: { backgroundColor: colors.surface },
+          headerTintColor: colors.text,
+          headerTitleStyle: { fontWeight: "700" },
+        }}
+      />
+      <Stack.Screen
+        name="PostDetail"
         component={PostDetailsScreen}
         options={{
           title: "Post Details",

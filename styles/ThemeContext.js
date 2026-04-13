@@ -42,9 +42,12 @@ export function ThemeProvider({ children }) {
   const colors = isDark ? darkColors : lightColors;
 
   const navigationTheme = useMemo(() => {
+    const baseTheme = isDark ? NavigationDarkTheme : NavigationDefaultTheme;
     return {
+      ...baseTheme,
       dark: isDark,
       colors: {
+        ...baseTheme.colors,
         primary: colors.primary,
         background: colors.background,
         card: colors.surface,
@@ -53,7 +56,7 @@ export function ThemeProvider({ children }) {
         notification: colors.primary,
       },
     };
-  }, [isDark]);
+  }, [isDark, colors]);
 
   const value = useMemo(
     () => ({ isDark, toggleTheme, colors, navigationTheme, isLoading }),

@@ -1,5 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useNavigation } from "@react-navigation/native";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
     ActivityIndicator,
@@ -327,6 +328,7 @@ const PostFlagButton = memo(
 
 export default function PostDetailsScreen({ route }) {
   const { colors } = useTheme();
+  const navigation = useNavigation();
   const postId = route?.params?.postId;
   const focusComment = route?.params?.focusComment === true;
 
@@ -352,6 +354,27 @@ export default function PostDetailsScreen({ route }) {
   const commentInputRef = useRef(null);
   const commentsYRef = useRef(0);
   const didAutoFocusRef = useRef(false);
+
+  const handleNavigateFromLocationModal = useCallback(() => {
+    const destination = {
+      latitude: Number(locationModal.lat),
+      longitude: Number(locationModal.lon),
+      address: "Incident Coordinates",
+    };
+
+    if (
+      !Number.isFinite(destination.latitude) ||
+      !Number.isFinite(destination.longitude)
+    ) {
+      return;
+    }
+
+    setLocationModal((prev) => ({ ...prev, visible: false }));
+    navigation.navigate("MainTabs", {
+      screen: "Navigate",
+      params: { destination },
+    });
+  }, [locationModal.lat, locationModal.lon, navigation]);
 
   const loadPost = useCallback(async () => {
     if (!postId) {
@@ -939,6 +962,18 @@ export default function PostDetailsScreen({ route }) {
               </View>
             </View>
 
+            <TouchableOpacity
+              style={[
+                styles.locationRouteButton,
+                { backgroundColor: colors.primary },
+              ]}
+              onPress={handleNavigateFromLocationModal}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="navigate" size={14} color="#fff" />
+              <Text style={styles.locationRouteButtonText}>1 meters away</Text>
+            </TouchableOpacity>
+
             <Text
               style={[
                 styles.credibilityHint,
@@ -1227,5 +1262,19 @@ const styles = StyleSheet.create({
   },
   coordinateDivider: {
     height: 1,
+  },
+  locationRouteButton: {
+    marginTop: 14,
+    borderRadius: 999,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  locationRouteButtonText: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "700",
   },
 });

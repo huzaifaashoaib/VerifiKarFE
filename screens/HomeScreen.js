@@ -1000,6 +1000,24 @@ export default function HomeScreen() {
     setLocationModal({ visible: true, name, lat, lon, distance });
   }, []);
 
+  const handleNavigateFromLocationModal = useCallback(() => {
+    const destination = {
+      latitude: Number(locationModal.lat),
+      longitude: Number(locationModal.lon),
+      address: locationModal.name || "Pinned destination",
+    };
+
+    if (
+      !Number.isFinite(destination.latitude) ||
+      !Number.isFinite(destination.longitude)
+    ) {
+      return;
+    }
+
+    setLocationModal((prev) => ({ ...prev, visible: false }));
+    navigation.navigate("Navigate", { destination });
+  }, [locationModal.lat, locationModal.lon, locationModal.name, navigation]);
+
   // Function to play video
   const playVideo = useCallback((uri) => {
     setCurrentVideoUri(uri);
@@ -2273,11 +2291,13 @@ export default function HomeScreen() {
 
             {/* Distance Badge */}
             {locationModal.distance && (
-              <View
+              <TouchableOpacity
                 style={[
                   styles.distanceBadge,
                   { backgroundColor: colors.primary },
                 ]}
+                onPress={handleNavigateFromLocationModal}
+                activeOpacity={0.85}
               >
                 <Ionicons name="navigate" size={14} color="#fff" />
                 <Text style={styles.distanceText}>
@@ -2285,7 +2305,7 @@ export default function HomeScreen() {
                     ? `${Math.round(locationModal.distance * 1000)} meters away`
                     : `${locationModal.distance.toFixed(1)} km away`}
                 </Text>
-              </View>
+              </TouchableOpacity>
             )}
 
             {/* Tap to dismiss hint */}

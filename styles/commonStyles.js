@@ -32,6 +32,10 @@ export const typography = {
     fontSize: 18,
     fontWeight: '600',
   },
+  medium: {
+    fontSize: 16,
+    fontWeight: '500',
+  },
   body: {
     fontSize: 16,
     fontWeight: 'normal',
