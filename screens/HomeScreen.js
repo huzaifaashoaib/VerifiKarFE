@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useNavigation } from "@react-navigation/native";
+import { useIsFocused, useNavigation } from "@react-navigation/native";
 import * as Location from "expo-location";
 import { useVideoPlayer, VideoView } from "expo-video";
 import * as VideoThumbnails from "expo-video-thumbnails";
@@ -9,6 +9,7 @@ import {
     ActivityIndicator,
     Alert,
     Animated,
+  AppState,
     Dimensions,
     FlatList,
     Image,
@@ -953,6 +954,7 @@ export default function HomeScreen() {
   const { selectedCategories, minCredibility, maxDaysOld, getActiveCategory } =
     useFilters();
   const navigation = useNavigation();
+  const isFocused = useIsFocused();
 
   // State management
   const [posts, setPosts] = useState([]);
@@ -989,6 +991,15 @@ export default function HomeScreen() {
     lon: 0,
     distance: null,
   });
+
+  const safeAlert = useCallback(
+    (title, message, buttons) => {
+      if (AppState.currentState === "active" && isFocused) {
+        Alert.alert(title, message, buttons);
+      }
+    },
+    [isFocused],
+  );
 
   // Function to show credibility info
   const showCredibilityInfo = useCallback((score) => {
@@ -1081,7 +1092,7 @@ export default function HomeScreen() {
   };
 
   useEffect(() => {
-    requestLocationPermission();
+    requestLocationPermission(false);
   }, []);
 
   useEffect(() => {
@@ -1149,7 +1160,7 @@ export default function HomeScreen() {
               setLocationName("Karachi (Default)");
               console.log("Using default location (Karachi)");
               if (showAlert) {
-                Alert.alert(
+                safeAlert(
                   "Location Unavailable",
                   "Could not get your location. Showing posts from Karachi. Tap the location button to try again.",
                   [{ text: "OK" }],
@@ -1176,7 +1187,7 @@ export default function HomeScreen() {
         setIsUsingRealLocation(false);
         setLocationName("Karachi (Default)");
         if (showAlert) {
-          Alert.alert(
+          safeAlert(
             "Location Permission Required",
             "Please enable location to see posts near you. Using default location.",
             [
@@ -1232,7 +1243,7 @@ export default function HomeScreen() {
           refreshedLocationName,
         );
       } else {
-        Alert.alert(
+        safeAlert(
           "Location Permission Required",
           "Please enable location in your device settings.",
           [{ text: "OK" }],
@@ -1240,13 +1251,23 @@ export default function HomeScreen() {
       }
     } catch (error) {
       console.error("Error refreshing location:", error);
-      Alert.alert(
+      safeAlert(
         "Location Error",
         "Could not get your location. Make sure location services are enabled in your device settings.",
         [{ text: "OK" }],
       );
     } finally {
       setIsLoadingLocation(false);
+    }
+  };
+
+  const fetchWithTimeout = async (url, options = {}, timeoutMs = 15000) => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(url, { ...options, signal: controller.signal });
+    } finally {
+      clearTimeout(timeoutId);
     }
   };
 
@@ -1278,32 +1299,70 @@ export default function HomeScreen() {
       queryParams.append("skip", "0");
       queryParams.append("limit", "20");
 
-      console.log("Fetching feed with params:", queryParams.toString());
+      const endpoint = `${API_BASE_URL}/feed?${queryParams}`;
+      const startedAt = Date.now();
 
-      const response = await fetch(`${API_BASE_URL}/feed?${queryParams}`, {
-        method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token && { Authorization: `Bearer ${token}` }),
-        },
-      });
+      console.log("[Feed] Fetching with params:", queryParams.toString());
+      console.log("[Feed] Endpoint:", endpoint);
+
+      let response;
+      try {
+        response = await fetchWithTimeout(
+          endpoint,
+          {
+            method: "GET",
+            headers: {
+              "Content-Type": "application/json",
+              ...(token && { Authorization: `Bearer ${token}` }),
+            },
+          },
+          15000,
+        );
+      } catch (fetchError) {
+        console.error("[Feed] Network/timeout error:", fetchError);
+        throw new Error(
+          "Network request failed. Verify API URL and emulator connectivity.",
+        );
+      }
+
+      console.log(
+        "[Feed] Response:",
+        response.status,
+        response.statusText,
+        `(${Date.now() - startedAt}ms)`,
+      );
+
+      const rawText = await response.text();
+      let data = null;
+      try {
+        data = rawText ? JSON.parse(rawText) : null;
+      } catch (parseError) {
+        console.error("[Feed] JSON parse error:", parseError);
+      }
 
       if (!response.ok) {
-        const errorText = await response.text();
-        console.error("Feed API error:", response.status, errorText);
+        console.error(
+          "[Feed] API error payload:",
+          rawText?.slice(0, 600) || "<empty>",
+        );
         throw new Error(`Failed to fetch feed: ${response.status}`);
       }
 
-      const data = await response.json();
-      console.log("Feed API response:", data);
+      console.log("[Feed] Response payload keys:", data ? Object.keys(data) : null);
 
       if (data.success && data.details?.posts) {
+        console.log("[Feed] Posts received:", data.details.posts.length);
+        if (data.details.posts.length > 0) {
+          console.log("[Feed] First post id:", data.details.posts[0].id);
+        }
         // Sort posts by created_at from latest to earliest
         const sortedPosts = data.details.posts.sort((a, b) => {
           return new Date(b.created_at) - new Date(a.created_at);
         });
         return sortedPosts;
       }
+
+      console.warn("[Feed] Unexpected response shape:", data);
 
       return [];
     } catch (error) {
@@ -1887,7 +1946,7 @@ export default function HomeScreen() {
                 initialUserVote={item.user_vote || null}
                 initialUserFlagged={item.user_flagged || false}
                 colors={colors}
-                onInteractionError={(message) => Alert.alert("Error", message)}
+                onInteractionError={(message) => safeAlert("Error", message)}
                 onCommentPress={() =>
                   navigation.navigate("PostDetails", {
                     postId: item.id,
@@ -2112,15 +2171,17 @@ export default function HomeScreen() {
       />
 
       {/* Video Player Modal */}
-      <VideoPlayerModal
-        visible={videoModalVisible}
-        uri={currentVideoUri}
-        onClose={() => {
-          setVideoModalVisible(false);
-          setCurrentVideoUri(null);
-        }}
-        colors={colors}
-      />
+      {videoModalVisible && !!currentVideoUri && (
+        <VideoPlayerModal
+          visible={videoModalVisible}
+          uri={currentVideoUri}
+          onClose={() => {
+            setVideoModalVisible(false);
+            setCurrentVideoUri(null);
+          }}
+          colors={colors}
+        />
+      )}
 
       {/* Image Viewer Modal */}
       <ImageViewerModal
