@@ -1,5 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import Constants from "expo-constants";
 import { createContext, useContext, useEffect, useState } from "react";
+import { Platform } from "react-native";
 import { API_BASE_URL } from "../config";
 
 const AuthContext = createContext(null);
@@ -7,6 +9,63 @@ const AuthContext = createContext(null);
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
+
+  const fetchWithTimeout = async (url, options = {}, timeoutMs = 10000) => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      return await fetch(url, {
+        ...options,
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  };
+
+  const parseJsonSafely = async (response) => {
+    try {
+      return await response.json();
+    } catch {
+      return {};
+    }
+  };
+
+  const getAuthBaseCandidates = () => {
+    const candidates = new Set([API_BASE_URL]);
+    const expoHost = Constants.expoConfig?.hostUri?.split(":")?.[0];
+
+    if (expoHost) {
+      candidates.add(`http://${expoHost}:8000`);
+    }
+
+    if (Platform.OS === "android") {
+      candidates.add("http://10.0.2.2:8000");
+      candidates.add("http://10.0.3.2:8000");
+    }
+
+    candidates.add("http://localhost:8000");
+
+    return Array.from(candidates).filter(Boolean);
+  };
+
+  const authFetchWithFallback = async (path, options) => {
+    const candidates = getAuthBaseCandidates();
+    let lastError = null;
+
+    for (const baseUrl of candidates) {
+      try {
+        console.log("Auth request:", `${baseUrl}${path}`);
+        return await fetchWithTimeout(`${baseUrl}${path}`, options, 10000);
+      } catch (error) {
+        lastError = error;
+        console.log("Auth endpoint failed:", baseUrl, error?.name || error);
+      }
+    }
+
+    throw lastError || new Error("All auth endpoints failed");
+  };
 
   useEffect(() => {
     checkLoginStatus();
@@ -38,7 +97,7 @@ export function AuthProvider({ children }) {
       formData.append("grant_type", "password");
 
       // Send login request to backend using OAuth2 format
-      const response = await fetch(`${API_BASE_URL}/auth/login`, {
+      const response = await authFetchWithFallback("/auth/login", {
         method: "POST",
         headers: {
           "Content-Type": "application/x-www-form-urlencoded",
@@ -46,7 +105,7 @@ export function AuthProvider({ children }) {
         body: formData.toString(),
       });
 
-      const data = await response.json();
+      const data = await parseJsonSafely(response);
       console.log("Login response:", response.status, data);
 
       if (response.ok) {
@@ -82,8 +141,9 @@ export function AuthProvider({ children }) {
       console.log("Login error:", error);
       return {
         success: false,
-        message:
-          "Unable to connect to the server. Please check your internet connection.",
+        message: error?.name === "AbortError"
+          ? "Login request timed out. Please check that the backend is running and reachable."
+          : "Unable to connect to the server. Please check your internet connection.",
       };
     }
   };
@@ -93,7 +153,7 @@ export function AuthProvider({ children }) {
       console.log("Signup started for:", email);
 
       // Send signup request to backend
-      const response = await fetch(`${API_BASE_URL}/auth/signup`, {
+      const response = await authFetchWithFallback("/auth/signup", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -104,7 +164,7 @@ export function AuthProvider({ children }) {
         }),
       });
 
-      const data = await response.json();
+      const data = await parseJsonSafely(response);
       console.log("Signup response:", response.status, data);
 
       if (response.ok) {
@@ -139,8 +199,9 @@ export function AuthProvider({ children }) {
       console.log("Signup error:", error);
       return {
         success: false,
-        message:
-          "Unable to connect to the server. Please check your internet connection.",
+        message: error?.name === "AbortError"
+          ? "Signup request timed out. Please check that the backend is running and reachable."
+          : "Unable to connect to the server. Please check your internet connection.",
       };
     }
   };

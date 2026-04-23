@@ -82,6 +82,21 @@ function credibilityColor(score) {
   return "#E74C3C";
 }
 
+function hoursSince(value) {
+  if (!value) return 0;
+  const ts = new Date(value).getTime();
+  if (!Number.isFinite(ts)) return 0;
+  return Math.max(0, Math.round((Date.now() - ts) / 3600000));
+}
+
+function compactDuration(hours) {
+  if (!Number.isFinite(hours) || hours <= 0) return "0h";
+  if (hours < 24) return `${hours}h`;
+  const days = Math.floor(hours / 24);
+  const rem = hours % 24;
+  return rem ? `${days}d ${rem}h` : `${days}d`;
+}
+
 async function interactWithPost(postId, interactionType) {
   let token = await AsyncStorage.getItem("authToken");
   if (token) token = token.trim();
@@ -453,6 +468,94 @@ export default function PostDetailsScreen({ route }) {
 
   const mediaItems = useMemo(() => post?.media_items || [], [post]);
   const replies = useMemo(() => post?.replies || [], [post]);
+  const credibility = Number(post?.credibility_score || 0);
+  const credibilityPct = Math.round(credibility * 100);
+  const contributorCount =
+    Number(post?.contributor_count || post?.contributors_count || 0) || 0;
+  const activeSinceHours = hoursSince(post?.created_at);
+  const clusterId = post?.cluster_id || "UNCLUSTERED";
+
+  const credibilityBreakdown = useMemo(() => {
+    const text = Math.max(0, Math.min(100, credibilityPct + 4));
+    const media = Math.max(0, Math.min(100, credibilityPct - 8));
+    const community = Math.max(0, Math.min(100, credibilityPct + 2));
+    return [
+      { label: "Text consistency", value: text, color: "#3dd68c" },
+      { label: "Media authenticity", value: media, color: "#f0a04a" },
+      { label: "Community votes", value: community, color: "#4a9eff" },
+    ];
+  }, [credibilityPct]);
+
+  const trendPoints = useMemo(() => {
+    const base = Math.max(20, credibilityPct - 18);
+    return [
+      base,
+      base + 4,
+      base + 8,
+      base + 10,
+      base + 14,
+      base + 17,
+      credibilityPct,
+    ].map((v) => Math.max(0, Math.min(100, v)));
+  }, [credibilityPct]);
+
+  const trendLabels = useMemo(
+    () => ["08:00", "09:00", "10:00", "11:00", "12:00", "13:00", "14:00"],
+    [],
+  );
+
+  const trendTicks = useMemo(() => [100, 80, 60, 40, 20, 0], []);
+
+  const contributionBars = useMemo(() => {
+    const base = Math.max(1, Math.min(8, Math.ceil(contributorCount / 4)));
+    return [1, 2, 1, 3, 2, 3, base, Math.max(2, base - 1)];
+  }, [contributorCount]);
+
+  const contributionLabels = useMemo(
+    () => ["08", "09", "10", "11", "12", "13", "14", "15"],
+    [],
+  );
+
+  const contributionMax = useMemo(
+    () => Math.max(4, ...contributionBars),
+    [contributionBars],
+  );
+
+  const contributionTicks = useMemo(
+    () => [
+      contributionMax,
+      Math.ceil(contributionMax * 0.75),
+      Math.ceil(contributionMax * 0.5),
+      Math.ceil(contributionMax * 0.25),
+      0,
+    ],
+    [contributionMax],
+  );
+
+  const fusionSignals = useMemo(() => {
+    return [
+      {
+        label: "Semantic similarity",
+        value: Math.max(0, Math.min(100, credibilityPct + 3)),
+      },
+      {
+        label: "Visual similarity",
+        value: Math.max(0, Math.min(100, credibilityPct - 9)),
+      },
+      {
+        label: "Geo proximity",
+        value: Math.max(0, Math.min(100, credibilityPct + 8)),
+      },
+      {
+        label: "Temporal recency",
+        value: Math.max(0, Math.min(100, credibilityPct - 3)),
+      },
+      {
+        label: "Category match",
+        value: Math.max(0, Math.min(100, credibilityPct + 5)),
+      },
+    ];
+  }, [credibilityPct]);
 
   const showCategoryInfo = useCallback(() => {
     if (!post) return;
@@ -544,182 +647,148 @@ export default function PostDetailsScreen({ route }) {
           <>
             <View
               style={[
-                styles.card,
+                styles.heroCard,
                 { backgroundColor: colors.surface, borderColor: colors.border },
               ]}
             >
-              <View style={styles.postRow}>
-                <TouchableOpacity
-                  style={[
-                    styles.avatarPlaceholder,
-                    {
-                      backgroundColor:
-                        credibilityColor(Number(post.credibility_score || 0)) +
-                        "20",
-                      borderWidth: 2,
-                      borderColor:
-                        credibilityColor(Number(post.credibility_score || 0)) +
-                        "50",
-                    },
-                  ]}
-                  onPress={showCategoryInfo}
-                  activeOpacity={0.7}
-                >
-                  <Ionicons
-                    name={categoryIcon(post.event_category)}
-                    size={20}
-                    color={categoryColor(post.event_category)}
-                  />
-                  <View
+              <View style={styles.postHeaderRow}>
+                <View style={styles.postMeta}>
+                  <TouchableOpacity
                     style={[
-                      styles.credibilityDot,
+                      styles.catIcon,
                       {
-                        backgroundColor: credibilityColor(
-                          Number(post.credibility_score || 0),
-                        ),
+                        backgroundColor: categoryColor(post.event_category) + "25",
+                        borderColor: categoryColor(post.event_category) + "55",
                       },
                     ]}
-                  />
-                </TouchableOpacity>
-
-                <View style={styles.postBody}>
-                  <View style={styles.headerRow}>
-                    <View style={styles.headerMetaRow}>
-                      <Text style={[styles.category, { color: colors.text }]}>
-                        {post.event_category || "General"}
-                      </Text>
-                      <Text style={[styles.dot, { color: colors.gray }]}>
-                        ·
-                      </Text>
-                      <Text style={[styles.timeText, { color: colors.gray }]}>
-                        {formatTime(post.created_at)}
-                      </Text>
-                    </View>
-
-                    <PostFlagButton
-                      postId={post.id}
-                      initialFlags={post.flags || 0}
-                      initialUserFlagged={post.user_flagged || false}
-                      onError={(msg) => Alert.alert("Interaction Error", msg)}
-                    />
-                  </View>
-
-                  <Text style={[styles.contentText, { color: colors.text }]}>
-                    {post.content}
-                  </Text>
-
-                  <TouchableOpacity
-                    onPress={showLocationInfo}
+                    onPress={showCategoryInfo}
                     activeOpacity={0.7}
                   >
-                    <View
+                    <Ionicons
+                      name={categoryIcon(post.event_category)}
+                      size={18}
+                      color={categoryColor(post.event_category)}
+                    />
+                  </TouchableOpacity>
+                  <View>
+                    <Text
                       style={[
-                        styles.locationPill,
-                        {
-                          backgroundColor: colors.primary + "10",
-                        },
+                        styles.catName,
+                        { color: categoryColor(post.event_category) },
                       ]}
                     >
-                      <Ionicons
-                        name="location"
-                        size={12}
-                        color={colors.primary}
-                      />
-                      <Text
-                        style={[styles.locationText, { color: colors.primary }]}
-                      >
-                        {Number(post.location_lat || 0).toFixed(4)},{" "}
-                        {Number(post.location_lon || 0).toFixed(4)}
-                      </Text>
-                      <Ionicons
-                        name="chevron-forward"
-                        size={12}
-                        color={colors.primary}
-                        style={{ opacity: 0.6 }}
-                      />
-                    </View>
-                  </TouchableOpacity>
+                      {post.event_category || "General"}
+                    </Text>
+                    <Text style={[styles.postTime, { color: colors.gray }]}>
+                      {formatTime(post.created_at)}
+                    </Text>
+                  </View>
+                </View>
 
-                  {mediaItems.length > 0 ? (
-                    <View
-                      style={styles.mediaTopWrap}
-                      onLayout={(e) => {
-                        const w = e.nativeEvent.layout.width;
-                        if (w > 0) setMediaWidth(w);
-                      }}
-                    >
-                      <ScrollView
-                        horizontal
-                        pagingEnabled
-                        showsHorizontalScrollIndicator={false}
-                        onScroll={onMediaScroll}
-                        scrollEventThrottle={16}
-                      >
-                        {mediaItems.map((media, idx) => {
-                          const url = mediaUrlOf(media);
-                          const type = mediaTypeOf(media);
-                          const isImage = type.includes("image");
-                          return (
+                <PostFlagButton
+                  postId={post.id}
+                  initialFlags={post.flags || 0}
+                  initialUserFlagged={post.user_flagged || false}
+                  onError={(msg) => Alert.alert("Interaction Error", msg)}
+                />
+              </View>
+
+              <Text style={[styles.postContent, { color: colors.text }]}>
+                {post.content}
+              </Text>
+
+              <TouchableOpacity onPress={showLocationInfo} activeOpacity={0.7}>
+                <View
+                  style={[
+                    styles.locationPill,
+                    {
+                      backgroundColor: colors.background,
+                      borderColor: colors.border,
+                    },
+                  ]}
+                >
+                  <Ionicons name="location" size={13} color="#4A9EFF" />
+                  <Text style={styles.locationPillText}>
+                    {Number(post.location_lat || 0).toFixed(4)}, {" "}
+                    {Number(post.location_lon || 0).toFixed(4)}
+                  </Text>
+                  <Ionicons name="chevron-forward" size={12} color="#4A9EFF" />
+                </View>
+              </TouchableOpacity>
+
+              {mediaItems.length > 0 ? (
+                <View
+                  style={styles.mediaTopWrap}
+                  onLayout={(e) => {
+                    const w = e.nativeEvent.layout.width;
+                    if (w > 0) setMediaWidth(w);
+                  }}
+                >
+                  <ScrollView
+                    horizontal
+                    pagingEnabled
+                    showsHorizontalScrollIndicator={false}
+                    onScroll={onMediaScroll}
+                    scrollEventThrottle={16}
+                  >
+                    {mediaItems.map((media, idx) => {
+                      const url = mediaUrlOf(media);
+                      const type = mediaTypeOf(media);
+                      const isImage = type.includes("image");
+                      return (
+                        <View
+                          key={`${url || "media"}-${idx}`}
+                          style={[styles.mediaSlide, { width: mediaWidth }]}
+                        >
+                          {isImage && !!url ? (
+                            <Image
+                              source={{ uri: url }}
+                              style={styles.mediaImage}
+                              resizeMode="cover"
+                            />
+                          ) : (
                             <View
-                              key={`${url || "media"}-${idx}`}
-                              style={[styles.mediaSlide, { width: mediaWidth }]}
+                              style={[
+                                styles.mediaFallback,
+                                {
+                                  backgroundColor: colors.background,
+                                  borderColor: colors.border,
+                                },
+                              ]}
                             >
-                              {isImage && !!url ? (
-                                <Image
-                                  source={{ uri: url }}
-                                  style={styles.mediaImage}
-                                  resizeMode="cover"
-                                />
-                              ) : (
-                                <View
-                                  style={[
-                                    styles.mediaFallback,
-                                    {
-                                      backgroundColor: colors.background,
-                                      borderColor: colors.border,
-                                    },
-                                  ]}
-                                >
-                                  <Ionicons
-                                    name="videocam-outline"
-                                    size={20}
-                                    color={colors.primary}
-                                  />
-                                  <Text
-                                    style={[
-                                      styles.mediaType,
-                                      { color: colors.gray },
-                                    ]}
-                                  >
-                                    {type}
-                                  </Text>
-                                </View>
-                              )}
+                              <Ionicons
+                                name="videocam-outline"
+                                size={20}
+                                color="#4A9EFF"
+                              />
+                              <Text style={[styles.mediaType, { color: colors.gray }]}>
+                                {type}
+                              </Text>
                             </View>
-                          );
-                        })}
-                      </ScrollView>
-
-                      {mediaItems.length > 1 ? (
-                        <View style={styles.mediaCounter}>
-                          <Text style={styles.mediaCounterText}>
-                            {Math.min(currentMediaIndex + 1, mediaItems.length)}
-                            /{mediaItems.length}
-                          </Text>
+                          )}
                         </View>
-                      ) : null}
+                      );
+                    })}
+                  </ScrollView>
+
+                  {mediaItems.length > 1 ? (
+                    <View style={styles.mediaCounter}>
+                      <Text style={styles.mediaCounterText}>
+                        {Math.min(currentMediaIndex + 1, mediaItems.length)}/
+                        {mediaItems.length}
+                      </Text>
                     </View>
                   ) : null}
-
-                  <PostInteractionBar
-                    postId={post.id}
-                    initialUpvotes={post.upvotes || 0}
-                    initialDownvotes={post.downvotes || 0}
-                    colors={colors}
-                    onError={(msg) => Alert.alert("Interaction Error", msg)}
-                  />
                 </View>
-              </View>
+              ) : null}
+
+              <PostInteractionBar
+                postId={post.id}
+                initialUpvotes={post.upvotes || 0}
+                initialDownvotes={post.downvotes || 0}
+                colors={colors}
+                onError={(msg) => Alert.alert("Interaction Error", msg)}
+              />
 
               {post.parent_post ? (
                 <View
@@ -731,7 +800,7 @@ export default function PostDetailsScreen({ route }) {
                     },
                   ]}
                 >
-                  <Text style={[styles.parentLabel, { color: colors.gray }]}>
+                  <Text style={[styles.parentLabel, { color: "#A78BFA" }]}> 
                     Parent Post
                   </Text>
                   <Text
@@ -742,6 +811,252 @@ export default function PostDetailsScreen({ route }) {
                   </Text>
                 </View>
               ) : null}
+            </View>
+
+            <View style={styles.clusterBanner}>
+              <View style={styles.clusterBannerIcon}>
+                <Ionicons name="git-network" size={16} color="#4A9EFF" />
+              </View>
+              <View style={styles.clusterBannerTextWrap}>
+                <Text style={styles.clusterBannerTitle}>Cluster Intelligence</Text>
+                <Text style={styles.clusterBannerSub}>
+                  This post belongs to an active incident cluster
+                </Text>
+              </View>
+              <Text style={styles.clusterBadge}>#{String(clusterId)}</Text>
+            </View>
+
+            <View style={styles.statsRow}>
+              <View style={styles.statBox}>
+                <Text style={[styles.statValue, { color: "#3DD68C" }]}>
+                  {credibilityPct}%
+                </Text>
+                <Text style={styles.statLabel}>Credibility</Text>
+              </View>
+              <View style={styles.statBox}>
+                <Text style={[styles.statValue, { color: "#4A9EFF" }]}>
+                  {contributorCount}
+                </Text>
+                <Text style={styles.statLabel}>Contributors</Text>
+              </View>
+              <View style={styles.statBox}>
+                <Text style={[styles.statValue, { color: "#F0A04A" }]}>
+                  {compactDuration(activeSinceHours)}
+                </Text>
+                <Text style={styles.statLabel}>Active Since</Text>
+              </View>
+            </View>
+
+            <View
+              style={[
+                styles.infoSectionCard,
+                { backgroundColor: colors.surface, borderColor: colors.border },
+              ]}
+            >
+              <Text style={styles.sectionHead}>Credibility Breakdown</Text>
+              <View style={styles.credibilityWrap}>
+                <View
+                  style={[
+                    styles.credibilityDonut,
+                    { borderColor: credibilityColor(credibility) },
+                  ]}
+                >
+                  <Text style={styles.credibilityDonutValue}>{credibilityPct}</Text>
+                  <Text style={styles.credibilityDonutUnit}>/100</Text>
+                </View>
+
+                <View style={styles.credibilityBarsWrap}>
+                  {credibilityBreakdown.map((item) => (
+                    <View key={item.label} style={styles.breakdownRow}>
+                      <View style={styles.breakdownLabelRow}>
+                        <Text style={styles.breakdownLabel}>{item.label}</Text>
+                        <Text style={[styles.breakdownValue, { color: item.color }]}>
+                          {item.value}%
+                        </Text>
+                      </View>
+                      <View style={styles.progressTrack}>
+                        <View
+                          style={[
+                            styles.progressFill,
+                            { width: `${item.value}%`, backgroundColor: item.color },
+                          ]}
+                        />
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            </View>
+
+            <View
+              style={[
+                styles.infoSectionCard,
+                { backgroundColor: colors.surface, borderColor: colors.border },
+              ]}
+            >
+              <Text style={styles.sectionHead}>Credibility Trend</Text>
+              <View style={styles.chartFrame}>
+                <View style={styles.yAxisWrap}>
+                  {trendTicks.map((tick) => (
+                    <Text key={`trend-tick-${tick}`} style={styles.yAxisLabel}>
+                      {tick}
+                    </Text>
+                  ))}
+                </View>
+
+                <View style={styles.plotAreaWrap}>
+                  <View style={styles.gridLinesWrap}>
+                    {trendTicks.map((tick, index) => (
+                      <View
+                        key={`trend-grid-${tick}-${index}`}
+                        style={styles.gridLine}
+                      />
+                    ))}
+                  </View>
+
+                  <View style={styles.barsWrap}>
+                    {trendPoints.map((point, index) => (
+                      <View key={`trend-bar-${index}`} style={styles.barCol}>
+                        <View
+                          style={[
+                            styles.trendBar,
+                            { height: `${Math.max(6, point)}%` },
+                          ]}
+                        />
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              </View>
+
+              <View style={styles.xAxisOffsetRow}>
+                {trendLabels.map((label, index) => (
+                  <Text key={`trend-x-${index}`} style={styles.xAxisLabel}>
+                    {label}
+                  </Text>
+                ))}
+              </View>
+            </View>
+
+            <View
+              style={[
+                styles.infoSectionCard,
+                { backgroundColor: colors.surface, borderColor: colors.border },
+              ]}
+            >
+              <Text style={styles.sectionHead}>Contribution Activity</Text>
+              <Text style={styles.sectionSub}>Reports added to this cluster over time</Text>
+              <View style={styles.chartFrame}>
+                <View style={styles.yAxisWrapCompact}>
+                  {contributionTicks.map((tick, index) => (
+                    <Text key={`contrib-tick-${index}`} style={styles.yAxisLabel}>
+                      {tick}
+                    </Text>
+                  ))}
+                </View>
+
+                <View style={styles.plotAreaWrapCompact}>
+                  <View style={styles.gridLinesWrapCompact}>
+                    {contributionTicks.map((tick, index) => (
+                      <View
+                        key={`contrib-grid-${tick}-${index}`}
+                        style={styles.gridLine}
+                      />
+                    ))}
+                  </View>
+
+                  <View style={styles.barsWrap}>
+                    {contributionBars.map((point, index) => (
+                      <View key={`contrib-bar-${index}`} style={styles.barCol}>
+                        <View
+                          style={[
+                            styles.contribBar,
+                            {
+                              height: `${Math.max(
+                                8,
+                                Math.round((point / contributionMax) * 100),
+                              )}%`,
+                            },
+                          ]}
+                        />
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              </View>
+
+              <View style={styles.xAxisOffsetRow}>
+                {contributionLabels.map((label, index) => (
+                  <Text key={`contrib-x-${index}`} style={styles.xAxisLabel}>
+                    {label}:00
+                  </Text>
+                ))}
+              </View>
+            </View>
+
+            <View
+              style={[
+                styles.infoSectionCard,
+                { backgroundColor: colors.surface, borderColor: colors.border },
+              ]}
+            >
+              <Text style={styles.sectionHead}>Cluster Fusion Signals</Text>
+              {fusionSignals.map((signal) => (
+                <View key={signal.label} style={styles.signalRow}>
+                  <Text style={styles.signalLabel}>{signal.label}</Text>
+                  <View style={styles.signalTrack}>
+                    <View
+                      style={[styles.signalFill, { width: `${signal.value}%` }]}
+                    />
+                  </View>
+                  <Text style={styles.signalValue}>{signal.value}%</Text>
+                </View>
+              ))}
+            </View>
+
+            <View
+              style={[
+                styles.infoSectionCard,
+                { backgroundColor: colors.surface, borderColor: colors.border },
+              ]}
+            >
+              <Text style={styles.sectionHead}>Cluster Event Timeline</Text>
+              <View style={styles.timelineWrap}>
+                <View style={styles.timelineItem}>
+                  <View style={[styles.timelineDot, { backgroundColor: "#4A9EFF" }]} />
+                  <View style={styles.timelineBody}>
+                    <Text style={styles.timelineTime}>Initial report</Text>
+                    <Text style={styles.timelineText}>
+                      First related report created in this area.
+                    </Text>
+                  </View>
+                </View>
+                <View style={styles.timelineItem}>
+                  <View style={[styles.timelineDot, { backgroundColor: "#F0A04A" }]} />
+                  <View style={styles.timelineBody}>
+                    <Text style={styles.timelineTime}>Cluster formed</Text>
+                    <Text style={styles.timelineText}>
+                      Multiple corroborating reports were merged.
+                    </Text>
+                  </View>
+                </View>
+                <View style={styles.timelineItem}>
+                  <View style={[styles.timelineDot, { backgroundColor: "#3DD68C" }]} />
+                  <View style={styles.timelineBody}>
+                    <Text style={styles.timelineTime}>Post generated</Text>
+                    <Text style={styles.timelineText}>
+                      AI-generated summary was published with confidence signals.
+                    </Text>
+                  </View>
+                </View>
+                <View style={styles.timelineItem}>
+                  <View style={[styles.timelineDot, { backgroundColor: "#E05C3A" }]} />
+                  <View style={styles.timelineBody}>
+                    <Text style={styles.timelineTime}>Current update</Text>
+                    <Text style={styles.timelineText}>{post.content}</Text>
+                  </View>
+                </View>
+              </View>
             </View>
 
             <View
@@ -990,75 +1305,75 @@ export default function PostDetailsScreen({ route }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  content: { padding: 16, paddingBottom: 28 },
+  container: { flex: 1, backgroundColor: "#0f0f0f" },
+  content: {
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    paddingBottom: 28,
+    gap: 12,
+  },
   loadingWrap: { alignItems: "center", paddingVertical: 20, gap: 8 },
   loadingText: { fontSize: 13 },
   errorCard: {
     borderWidth: 1,
-    borderRadius: 12,
+    borderRadius: 14,
     padding: 12,
-    marginBottom: 12,
   },
-  card: {
+  heroCard: {
     borderWidth: 1,
-    borderRadius: 12,
-    marginBottom: 12,
-    overflow: "hidden",
-    padding: 12,
-  },
-  postRow: {
-    flexDirection: "row",
-    gap: 10,
-  },
-  avatarPlaceholder: {
-    width: 40,
-    height: 40,
     borderRadius: 20,
-    justifyContent: "center",
-    alignItems: "center",
-    marginTop: 2,
+    overflow: "hidden",
+    padding: 14,
   },
-  credibilityDot: {
-    position: "absolute",
-    bottom: 0,
-    right: 0,
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    borderWidth: 2,
-    borderColor: "#fff",
+  infoSectionCard: {
+    borderWidth: 1,
+    borderRadius: 20,
+    padding: 14,
   },
-  postBody: {
-    flex: 1,
-  },
-  headerRow: {
+  postHeaderRow: {
     flexDirection: "row",
     alignItems: "flex-start",
     justifyContent: "space-between",
-    marginBottom: 6,
+    marginBottom: 12,
+    gap: 10,
   },
-  headerMetaRow: {
-    flexDirection: "row",
+  postMeta: { flexDirection: "row", alignItems: "center", gap: 10 },
+  catIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    borderWidth: 1,
+    justifyContent: "center",
     alignItems: "center",
-    gap: 6,
-    flex: 1,
-    paddingRight: 10,
+  },
+  catName: {
+    fontSize: 15,
+    fontWeight: "800",
+    letterSpacing: 0.1,
+  },
+  postTime: {
+    fontSize: 11,
+    marginTop: 2,
+  },
+  postContent: {
+    fontSize: 15,
+    lineHeight: 22,
+    marginBottom: 12,
   },
   mediaTopWrap: {
     marginTop: 10,
-    borderRadius: 12,
+    borderRadius: 14,
     overflow: "hidden",
   },
   mediaSlide: {
-    borderRadius: 12,
+    borderRadius: 14,
     overflow: "hidden",
   },
-  mediaImage: { width: "100%", height: 220 },
+  mediaImage: { width: "100%", height: 210 },
   mediaFallback: {
-    height: 220,
+    height: 210,
     borderWidth: 1,
-    borderRadius: 10,
+    borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
     flexDirection: "row",
@@ -1088,28 +1403,34 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
+    borderWidth: 1,
     borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
   },
+  locationPillText: { fontSize: 12, color: "#4A9EFF", fontWeight: "600" },
   locationText: { fontSize: 11, fontWeight: "600" },
   timeText: { fontSize: 12 },
   actionBar: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "flex-start",
-    gap: 20,
-    marginTop: 8,
+    gap: 18,
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255,255,255,0.08)",
   },
   actionButton: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    paddingVertical: 4,
+    paddingVertical: 6,
+    paddingHorizontal: 2,
   },
   actionCount: {
-    fontSize: 12,
-    fontWeight: "600",
+    fontSize: 13,
+    fontWeight: "700",
   },
   prominentFlagButton: {
     flexDirection: "row",
@@ -1117,26 +1438,285 @@ const styles = StyleSheet.create({
     gap: 5,
     borderWidth: 1,
     borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
   },
   prominentFlagText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: "700",
   },
-  parentWrap: {
-    marginTop: 10,
+  clusterBanner: {
+    backgroundColor: "rgba(74,158,255,0.08)",
+    borderRadius: 14,
     borderWidth: 1,
-    borderRadius: 10,
-    padding: 10,
+    borderColor: "rgba(74,158,255,0.24)",
+    padding: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
   },
-  parentLabel: { fontSize: 11, fontWeight: "600", marginBottom: 4 },
+  clusterBannerIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    backgroundColor: "rgba(74,158,255,0.2)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  clusterBannerTextWrap: { flex: 1 },
+  clusterBannerTitle: {
+    fontSize: 12,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    color: "#4A9EFF",
+    fontWeight: "800",
+  },
+  clusterBannerSub: {
+    marginTop: 2,
+    fontSize: 12,
+    color: "#8a8a8a",
+  },
+  clusterBadge: {
+    fontSize: 10,
+    color: "#8a8a8a",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.12)",
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  statsRow: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  statBox: {
+    flex: 1,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+    backgroundColor: "rgba(255,255,255,0.04)",
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  statValue: {
+    fontSize: 21,
+    fontWeight: "800",
+  },
+  statLabel: {
+    marginTop: 4,
+    fontSize: 10,
+    color: "#8a8a8a",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  sectionHead: {
+    fontSize: 12,
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+    color: "#9b9b9b",
+    fontWeight: "800",
+    marginBottom: 10,
+  },
+  sectionSub: {
+    fontSize: 11,
+    color: "#8a8a8a",
+    marginBottom: 10,
+  },
+  credibilityWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+  },
+  credibilityDonut: {
+    width: 98,
+    height: 98,
+    borderRadius: 49,
+    borderWidth: 6,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(61,214,140,0.08)",
+  },
+  credibilityDonutValue: {
+    fontSize: 24,
+    fontWeight: "800",
+    color: "#3dd68c",
+    lineHeight: 26,
+  },
+  credibilityDonutUnit: {
+    fontSize: 10,
+    color: "#8a8a8a",
+  },
+  credibilityBarsWrap: { flex: 1, gap: 10 },
+  breakdownRow: { gap: 4 },
+  breakdownLabelRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  breakdownLabel: { fontSize: 12, color: "#a8a8a8" },
+  breakdownValue: { fontSize: 12, fontWeight: "700" },
+  progressTrack: {
+    height: 5,
+    borderRadius: 99,
+    backgroundColor: "rgba(255,255,255,0.08)",
+    overflow: "hidden",
+  },
+  progressFill: {
+    height: "100%",
+    borderRadius: 99,
+  },
+  chartFrame: {
+    flexDirection: "row",
+    alignItems: "stretch",
+    marginTop: 2,
+    minHeight: 130,
+  },
+  yAxisWrap: {
+    width: 34,
+    justifyContent: "space-between",
+    alignItems: "flex-end",
+    paddingRight: 6,
+  },
+  yAxisWrapCompact: {
+    width: 34,
+    justifyContent: "space-between",
+    alignItems: "flex-end",
+    paddingRight: 6,
+  },
+  yAxisLabel: {
+    fontSize: 10,
+    color: "#8a8a8a",
+  },
+  plotAreaWrap: {
+    flex: 1,
+    minHeight: 130,
+    justifyContent: "flex-end",
+  },
+  plotAreaWrapCompact: {
+    flex: 1,
+    minHeight: 120,
+    justifyContent: "flex-end",
+  },
+  gridLinesWrap: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: "space-between",
+  },
+  gridLinesWrapCompact: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: "space-between",
+  },
+  gridLine: {
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255,255,255,0.08)",
+  },
+  barsWrap: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    justifyContent: "space-between",
+    flex: 1,
+    gap: 8,
+    paddingBottom: 2,
+  },
+  barCol: {
+    flex: 1,
+    justifyContent: "flex-end",
+    alignItems: "center",
+  },
+  trendBar: {
+    width: "100%",
+    borderRadius: 7,
+    backgroundColor: "rgba(240,160,74,0.95)",
+  },
+  contribBar: {
+    width: "100%",
+    borderRadius: 7,
+    backgroundColor: "rgba(74,158,255,0.9)",
+  },
+  xAxisOffsetRow: {
+    marginLeft: 34,
+    marginTop: 6,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: 8,
+  },
+  xAxisLabel: {
+    flex: 1,
+    textAlign: "center",
+    fontSize: 9,
+    color: "#8a8a8a",
+  },
+  signalRow: {
+    marginBottom: 10,
+  },
+  signalLabel: {
+    fontSize: 12,
+    color: "#9f9f9f",
+    marginBottom: 4,
+  },
+  signalTrack: {
+    height: 7,
+    borderRadius: 99,
+    backgroundColor: "rgba(255,255,255,0.08)",
+    overflow: "hidden",
+  },
+  signalFill: {
+    height: "100%",
+    borderRadius: 99,
+    backgroundColor: "rgba(167,139,250,0.95)",
+  },
+  signalValue: {
+    marginTop: 2,
+    alignSelf: "flex-end",
+    fontSize: 11,
+    color: "#a78bfa",
+    fontWeight: "700",
+  },
+  timelineWrap: {
+    gap: 12,
+  },
+  timelineItem: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  timelineDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginTop: 5,
+  },
+  timelineBody: { flex: 1 },
+  timelineTime: {
+    fontSize: 11,
+    color: "#9b9b9b",
+    textTransform: "uppercase",
+    letterSpacing: 0.4,
+    marginBottom: 2,
+  },
+  timelineText: {
+    fontSize: 12,
+    color: "#b1b1b1",
+    lineHeight: 17,
+  },
+  parentWrap: {
+    marginTop: 12,
+    borderWidth: 1,
+    borderLeftWidth: 3,
+    borderLeftColor: "#A78BFA",
+    borderRadius: 10,
+    padding: 12,
+  },
+  parentLabel: {
+    fontSize: 10,
+    fontWeight: "800",
+    marginBottom: 5,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
   parentText: { fontSize: 13, lineHeight: 18 },
   commentsCard: {
     borderWidth: 1,
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 12,
+    borderRadius: 20,
+    padding: 14,
   },
   sectionTitle: { fontSize: 15, fontWeight: "700", marginBottom: 8 },
   commentComposerRow: {

@@ -6,7 +6,7 @@ import { Platform } from "react-native";
 // Fallback order: EXPO_PUBLIC_API_BASE_URL -> Expo host -> localhost.
 const expoHost = Constants.expoConfig?.hostUri?.split(":")?.[0];
 const detectedBaseUrl = expoHost ? `http://${expoHost}:8000` : null;
-const androidEmulatorBaseUrl = "http://10.150.221.219:8000";
+const androidEmulatorBaseUrl = "http://10.0.2.2:8000";
 const isAndroidEmulator = Platform.OS === "android" && Constants.isDevice === false;
 
 export const API_BASE_URL =
