@@ -728,6 +728,7 @@ export default function DiscoverScreen() {
 
   const [activeFilter, setActiveFilter] = useState("all");
   const [searchTerm, setSearchTerm] = useState("");
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [filterChips, setFilterChips] = useState(FILTERS);
@@ -739,6 +740,24 @@ export default function DiscoverScreen() {
   const [sheetPayload, setSheetPayload] = useState(null);
   const [isSheetLoading, setIsSheetLoading] = useState(false);
   const sheetTranslateY = useRef(new Animated.Value(SHEET_HEIGHT)).current;
+  const searchDebounceRef = useRef(null);
+
+  // New logic: debounce search input to avoid filtering on every keystroke.
+  useEffect(() => {
+    if (searchDebounceRef.current) {
+      clearTimeout(searchDebounceRef.current);
+    }
+
+    searchDebounceRef.current = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm);
+    }, 300);
+
+    return () => {
+      if (searchDebounceRef.current) {
+        clearTimeout(searchDebounceRef.current);
+      }
+    };
+  }, [searchTerm]);
 
   const loadDiscoverOverview = useCallback(async () => {
     try {
@@ -795,25 +814,27 @@ export default function DiscoverScreen() {
     const base =
       activeFilter === "all"
         ? topics
-        : topics.filter((item) => item.key === activeFilter);
-    if (!searchTerm.trim()) return base;
-    const query = searchTerm.toLowerCase();
+        : topics.filter(
+            (item) => (item.key || "").toLowerCase() === activeFilter,
+          );
+    if (!debouncedSearchTerm.trim()) return base;
+    const query = debouncedSearchTerm.toLowerCase();
     return base.filter(
       (item) =>
-        item.name.toLowerCase().includes(query) ||
-        item.subtitle.toLowerCase().includes(query),
+        (item.name || "").toLowerCase().includes(query) ||
+        (item.subtitle || "").toLowerCase().includes(query),
     );
-  }, [activeFilter, topics, searchTerm]);
+  }, [activeFilter, topics, debouncedSearchTerm]);
 
   const filteredLocations = useMemo(() => {
-    if (!searchTerm.trim()) return locations;
-    const query = searchTerm.toLowerCase();
+    if (!debouncedSearchTerm.trim()) return locations;
+    const query = debouncedSearchTerm.toLowerCase();
     return locations.filter(
       (item) =>
-        item.name.toLowerCase().includes(query) ||
-        item.tags.toLowerCase().includes(query),
+        (item.name || "").toLowerCase().includes(query) ||
+        (item.tags || "").toLowerCase().includes(query),
     );
-  }, [locations, searchTerm]);
+  }, [locations, debouncedSearchTerm]);
 
   const filteredEvents = useMemo(() => {
     const byCategory =
@@ -824,15 +845,22 @@ export default function DiscoverScreen() {
             return c.includes(activeFilter);
           });
 
-    if (!searchTerm.trim()) return byCategory;
-    const query = searchTerm.toLowerCase();
+    if (!debouncedSearchTerm.trim()) return byCategory;
+    const query = debouncedSearchTerm.toLowerCase();
     return byCategory.filter(
       (event) =>
-        event.title.toLowerCase().includes(query) ||
-        event.location.toLowerCase().includes(query) ||
-        event.category.toLowerCase().includes(query),
+        (event.title || "").toLowerCase().includes(query) ||
+        (event.location || "").toLowerCase().includes(query) ||
+        (event.category || "").toLowerCase().includes(query),
     );
-  }, [activeFilter, events, searchTerm]);
+  }, [activeFilter, events, debouncedSearchTerm]);
+
+  // New logic: show a single empty state when all three sections are empty.
+  const showGlobalEmptyState =
+    !isLoading &&
+    filteredTopics.length === 0 &&
+    filteredLocations.length === 0 &&
+    filteredEvents.length === 0;
 
   const openBottomSheet = useCallback(
     (payload) => {
@@ -1012,11 +1040,11 @@ export default function DiscoverScreen() {
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.filterRow}
           >
-            {filterChips.map((chip) => {
+            {filterChips.map((chip, idx) => {
               const isActive = chip.key === activeFilter;
               return (
                 <TouchableOpacity
-                  key={chip.key}
+                  key={`${chip.key}-${idx}`}
                   onPress={() => setActiveFilter(chip.key)}
                   style={[
                     styles.chip,
@@ -1057,228 +1085,246 @@ export default function DiscoverScreen() {
           </View>
         ) : null}
 
-        <SectionHeader title="Trending topics" colors={colors} />
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.horizontalRow}
-        >
-          {filteredTopics.map((item, idx) => (
-            <TouchableOpacity
-              key={item.id || item.key || `${item.name}-${idx}`}
-              activeOpacity={0.85}
-              onPress={() => openTopicSheet(item)}
-              style={[
-                styles.topicCard,
-                {
-                  backgroundColor: colors.surface,
-                  borderColor: colors.lightGray,
-                },
-              ]}
-            >
-              <GradientPanel colors={item.colors} height={136}>
-                <Ionicons
-                  name={iconForKey(item.key)}
-                  size={30}
-                  color="#FFFFFF"
-                  style={styles.topicGlyph}
-                />
-                <View style={styles.countBadge}>
-                  <Text style={styles.countBadgeText}>
-                    {item.reports} reports
-                  </Text>
-                </View>
-              </GradientPanel>
-              <View style={styles.topicBody}>
-                <Text
-                  style={[styles.topicTitle, { color: colors.text }]}
-                  numberOfLines={1}
-                >
-                  {item.name}
-                </Text>
-                <Text style={[styles.topicSub, { color: colors.gray }]}>
-                  {item.subtitle}
-                </Text>
-              </View>
-            </TouchableOpacity>
-          ))}
-          {filteredTopics.length === 0 ? (
+        {showGlobalEmptyState ? (
+          <View style={styles.loadingWrap}>
             <Text style={[styles.emptyText, { color: colors.gray }]}>
-              No topic matches your search.
+              No results found. Try a different search term.
             </Text>
-          ) : null}
-        </ScrollView>
-
-        <SectionHeader title="Trending locations" colors={colors} />
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.horizontalRow}
-        >
-          {filteredLocations.map((item, idx) => (
-            <TouchableOpacity
-              key={item.id || item.name || `loc-${idx}`}
-              activeOpacity={0.85}
-              onPress={() => openLocationSheet(item)}
-              style={[
-                styles.locationCard,
-                {
-                  backgroundColor: colors.surface,
-                  borderColor: colors.lightGray,
-                },
-              ]}
+          </View>
+        ) : (
+          <>
+            <SectionHeader title="Trending topics" colors={colors} />
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.horizontalRow}
             >
-              <GradientPanel colors={item.colors} height={120}>
-                <View style={styles.locationHeroCenter}>
-                  <Ionicons
-                    name={iconForKey(
-                      normalizeLocationKey(item.name || item.topLabel),
-                    )}
-                    size={26}
-                    color="#FFFFFF"
-                  />
-                  <Text style={styles.locationHeroText}>{item.topLabel}</Text>
-                </View>
-                <View style={styles.countBadge}>
-                  <Text style={styles.countBadgeText}>{item.posts} posts</Text>
-                </View>
-              </GradientPanel>
-
-              <View style={styles.locationBody}>
-                <Text
-                  style={[styles.topicTitle, { color: colors.text }]}
-                  numberOfLines={1}
-                >
-                  {item.name}
-                </Text>
-                <View style={styles.pinRow}>
-                  <Ionicons
-                    name="location-outline"
-                    size={11}
-                    color={colors.gray}
-                  />
-                  <Text
-                    style={[styles.topicSub, { color: colors.gray }]}
-                    numberOfLines={1}
-                  >
-                    {item.tags}
-                  </Text>
-                </View>
-              </View>
-            </TouchableOpacity>
-          ))}
-          {filteredLocations.length === 0 ? (
-            <Text style={[styles.emptyText, { color: colors.gray }]}>
-              No location matches your search.
-            </Text>
-          ) : null}
-        </ScrollView>
-
-        <SectionHeader title="Events near you" colors={colors} />
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.horizontalRow}
-        >
-          {filteredEvents.map((event, idx) => (
-            <TouchableOpacity
-              key={event.id || event.title || `event-${idx}`}
-              activeOpacity={0.85}
-              onPress={() => openEventSheet(event)}
-              style={[
-                styles.eventCard,
-                {
-                  backgroundColor: colors.surface,
-                  borderColor: colors.lightGray,
-                },
-              ]}
-            >
-              <GradientPanel colors={event.colors} height={112}>
-                <View style={styles.eventCenterLabel}>
-                  <Ionicons
-                    name={iconForKey(normalizeEventCategoryKey(event.category))}
-                    size={30}
-                    color="#FFFFFF"
-                    style={styles.topicGlyph}
-                  />
-                  <Text style={styles.eventCenterText}>{event.label}</Text>
-                </View>
-
-                <View style={styles.eventCatBadge}>
-                  <Text style={styles.eventCatText}>{event.category}</Text>
-                </View>
-
-                <View
+              {filteredTopics.map((item, idx) => (
+                <TouchableOpacity
+                  key={`${item.id || item.key || item.name}-${idx}`}
+                  activeOpacity={0.85}
+                  onPress={() => openTopicSheet(item)}
                   style={[
-                    styles.eventDateBadge,
-                    { backgroundColor: colors.surface },
+                    styles.topicCard,
+                    {
+                      backgroundColor: colors.surface,
+                      borderColor: colors.lightGray,
+                    },
                   ]}
                 >
-                  <Text style={[styles.eventDay, { color: colors.text }]}>
-                    {event.day}
-                  </Text>
-                  <Text style={[styles.eventMonth, { color: colors.gray }]}>
-                    {event.month}
-                  </Text>
-                </View>
-              </GradientPanel>
-
-              <View style={styles.eventBody}>
-                <Text
-                  style={[styles.eventTitle, { color: colors.text }]}
-                  numberOfLines={2}
-                >
-                  {event.title}
-                </Text>
-
-                <View style={styles.pinRow}>
-                  <Ionicons
-                    name="location-outline"
-                    size={11}
-                    color={colors.gray}
-                  />
-                  <Text
-                    style={[styles.topicSub, { color: colors.gray }]}
-                    numberOfLines={1}
-                  >
-                    {event.location}
-                  </Text>
-                </View>
-
-                <View
-                  style={[
-                    styles.eventFooter,
-                    { borderTopColor: colors.lightGray },
-                  ]}
-                >
-                  <Text style={[styles.attendingText, { color: colors.text }]}>
-                    {event.attending}
-                  </Text>
-                  <View
-                    style={[
-                      styles.statusPill,
-                      { backgroundColor: event.statusBg },
-                    ]}
-                  >
+                  <GradientPanel colors={item.colors} height={136}>
+                    <Ionicons
+                      name={iconForKey(item.key)}
+                      size={30}
+                      color="#FFFFFF"
+                      style={styles.topicGlyph}
+                    />
+                    <View style={styles.countBadge}>
+                      <Text style={styles.countBadgeText}>
+                        {item.reports} reports
+                      </Text>
+                    </View>
+                  </GradientPanel>
+                  <View style={styles.topicBody}>
                     <Text
-                      style={[
-                        styles.statusPillText,
-                        { color: event.statusColor },
-                      ]}
+                      style={[styles.topicTitle, { color: colors.text }]}
+                      numberOfLines={1}
                     >
-                      {event.status}
+                      {item.name}
+                    </Text>
+                    <Text style={[styles.topicSub, { color: colors.gray }]}>
+                      {item.subtitle}
                     </Text>
                   </View>
-                </View>
-              </View>
-            </TouchableOpacity>
-          ))}
-          {filteredEvents.length === 0 ? (
-            <Text style={[styles.emptyText, { color: colors.gray }]}>
-              No event matches your filters.
-            </Text>
-          ) : null}
-        </ScrollView>
+                </TouchableOpacity>
+              ))}
+              {filteredTopics.length === 0 ? (
+                <Text style={[styles.emptyText, { color: colors.gray }]}>
+                  No topic matches your search.
+                </Text>
+              ) : null}
+            </ScrollView>
+
+            <SectionHeader title="Trending locations" colors={colors} />
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.horizontalRow}
+            >
+              {filteredLocations.map((item, idx) => (
+                <TouchableOpacity
+                  key={`${item.id || item.name || "loc"}-${idx}`}
+                  activeOpacity={0.85}
+                  onPress={() => openLocationSheet(item)}
+                  style={[
+                    styles.locationCard,
+                    {
+                      backgroundColor: colors.surface,
+                      borderColor: colors.lightGray,
+                    },
+                  ]}
+                >
+                  <GradientPanel colors={item.colors} height={120}>
+                    <View style={styles.locationHeroCenter}>
+                      <Ionicons
+                        name={iconForKey(
+                          normalizeLocationKey(item.name || item.topLabel),
+                        )}
+                        size={26}
+                        color="#FFFFFF"
+                      />
+                      <Text style={styles.locationHeroText}>
+                        {item.topLabel}
+                      </Text>
+                    </View>
+                    <View style={styles.countBadge}>
+                      <Text style={styles.countBadgeText}>
+                        {item.posts} posts
+                      </Text>
+                    </View>
+                  </GradientPanel>
+
+                  <View style={styles.locationBody}>
+                    <Text
+                      style={[styles.topicTitle, { color: colors.text }]}
+                      numberOfLines={1}
+                    >
+                      {item.name}
+                    </Text>
+                    <View style={styles.pinRow}>
+                      <Ionicons
+                        name="location-outline"
+                        size={11}
+                        color={colors.gray}
+                      />
+                      <Text
+                        style={[styles.topicSub, { color: colors.gray }]}
+                        numberOfLines={1}
+                      >
+                        {item.tags}
+                      </Text>
+                    </View>
+                  </View>
+                </TouchableOpacity>
+              ))}
+              {filteredLocations.length === 0 ? (
+                <Text style={[styles.emptyText, { color: colors.gray }]}>
+                  No location matches your search.
+                </Text>
+              ) : null}
+            </ScrollView>
+
+            <SectionHeader title="Events near you" colors={colors} />
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.horizontalRow}
+            >
+              {filteredEvents.map((event, idx) => (
+                <TouchableOpacity
+                  key={`${event.id || event.title || "event"}-${idx}`}
+                  activeOpacity={0.85}
+                  onPress={() => openEventSheet(event)}
+                  style={[
+                    styles.eventCard,
+                    {
+                      backgroundColor: colors.surface,
+                      borderColor: colors.lightGray,
+                    },
+                  ]}
+                >
+                  <GradientPanel colors={event.colors} height={112}>
+                    <View style={styles.eventCenterLabel}>
+                      <Ionicons
+                        name={iconForKey(
+                          normalizeEventCategoryKey(event.category),
+                        )}
+                        size={30}
+                        color="#FFFFFF"
+                        style={styles.topicGlyph}
+                      />
+                      <Text style={styles.eventCenterText}>{event.label}</Text>
+                    </View>
+
+                    <View style={styles.eventCatBadge}>
+                      <Text style={styles.eventCatText}>{event.category}</Text>
+                    </View>
+
+                    <View
+                      style={[
+                        styles.eventDateBadge,
+                        { backgroundColor: colors.surface },
+                      ]}
+                    >
+                      <Text style={[styles.eventDay, { color: colors.text }]}>
+                        {event.day}
+                      </Text>
+                      <Text style={[styles.eventMonth, { color: colors.gray }]}>
+                        {event.month}
+                      </Text>
+                    </View>
+                  </GradientPanel>
+
+                  <View style={styles.eventBody}>
+                    <Text
+                      style={[styles.eventTitle, { color: colors.text }]}
+                      numberOfLines={2}
+                    >
+                      {event.title}
+                    </Text>
+
+                    <View style={styles.pinRow}>
+                      <Ionicons
+                        name="location-outline"
+                        size={11}
+                        color={colors.gray}
+                      />
+                      <Text
+                        style={[styles.topicSub, { color: colors.gray }]}
+                        numberOfLines={1}
+                      >
+                        {event.location}
+                      </Text>
+                    </View>
+
+                    <View
+                      style={[
+                        styles.eventFooter,
+                        { borderTopColor: colors.lightGray },
+                      ]}
+                    >
+                      <Text
+                        style={[styles.attendingText, { color: colors.text }]}
+                      >
+                        {event.attending}
+                      </Text>
+                      <View
+                        style={[
+                          styles.statusPill,
+                          { backgroundColor: event.statusBg },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.statusPillText,
+                            { color: event.statusColor },
+                          ]}
+                        >
+                          {event.status}
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+                </TouchableOpacity>
+              ))}
+              {filteredEvents.length === 0 ? (
+                <Text style={[styles.emptyText, { color: colors.gray }]}>
+                  No event matches your filters.
+                </Text>
+              ) : null}
+            </ScrollView>
+          </>
+        )}
       </ScrollView>
 
       <Modal

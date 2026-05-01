@@ -71,10 +71,52 @@ export function AuthProvider({ children }) {
     checkLoginStatus();
   }, []);
 
+  const refreshSession = async (tokenToRefresh) => {
+    try {
+      const response = await authFetchWithFallback("/auth/refresh", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ refresh_token: tokenToRefresh }),
+      });
+
+      const data = await parseJsonSafely(response);
+      if (!response.ok || !data?.success) {
+        await AsyncStorage.removeItem("authToken");
+        await AsyncStorage.removeItem("refreshToken");
+        return false;
+      }
+
+      const tokenData = data.details || data;
+      if (tokenData.access_token) {
+        await AsyncStorage.setItem("authToken", tokenData.access_token);
+      }
+      if (tokenData.refresh_token) {
+        await AsyncStorage.setItem("refreshToken", tokenData.refresh_token);
+      }
+
+      return true;
+    } catch (error) {
+      console.log("Refresh token error:", error);
+      return false;
+    }
+  };
+
   const checkLoginStatus = async () => {
     try {
       const token = await AsyncStorage.getItem("authToken");
+      const refreshToken = await AsyncStorage.getItem("refreshToken");
       const userData = await AsyncStorage.getItem("userData");
+
+      if (refreshToken) {
+        // New logic: refresh session on app start to avoid forced logins.
+        const refreshed = await refreshSession(refreshToken);
+        if (refreshed && userData) {
+          setUser(JSON.parse(userData));
+        }
+        return;
+      }
 
       if (token && userData) {
         setUser(JSON.parse(userData));
@@ -84,6 +126,22 @@ export function AuthProvider({ children }) {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const getValidAccessToken = async () => {
+    const token = await AsyncStorage.getItem("authToken");
+    const refreshToken = await AsyncStorage.getItem("refreshToken");
+
+    if (!refreshToken) {
+      return token;
+    }
+
+    const refreshed = await refreshSession(refreshToken);
+    if (!refreshed) {
+      return null;
+    }
+
+    return await AsyncStorage.getItem("authToken");
   };
 
   const login = async (email, password) => {
@@ -115,6 +173,9 @@ export function AuthProvider({ children }) {
         if (tokenData.access_token) {
           await AsyncStorage.setItem("authToken", tokenData.access_token);
         }
+        if (tokenData.refresh_token) {
+          await AsyncStorage.setItem("refreshToken", tokenData.refresh_token);
+        }
 
         // Store user data
         const userData = {
@@ -141,9 +202,10 @@ export function AuthProvider({ children }) {
       console.log("Login error:", error);
       return {
         success: false,
-        message: error?.name === "AbortError"
-          ? "Login request timed out. Please check that the backend is running and reachable."
-          : "Unable to connect to the server. Please check your internet connection.",
+        message:
+          error?.name === "AbortError"
+            ? "Login request timed out. Please check that the backend is running and reachable."
+            : "Unable to connect to the server. Please check your internet connection.",
       };
     }
   };
@@ -181,7 +243,7 @@ export function AuthProvider({ children }) {
           // Signup succeeded but login failed - user needs to login manually
           console.log(
             "Signup succeeded but auto-login failed:",
-            loginResult.message
+            loginResult.message,
           );
           return {
             success: true,
@@ -199,9 +261,10 @@ export function AuthProvider({ children }) {
       console.log("Signup error:", error);
       return {
         success: false,
-        message: error?.name === "AbortError"
-          ? "Signup request timed out. Please check that the backend is running and reachable."
-          : "Unable to connect to the server. Please check your internet connection.",
+        message:
+          error?.name === "AbortError"
+            ? "Signup request timed out. Please check that the backend is running and reachable."
+            : "Unable to connect to the server. Please check your internet connection.",
       };
     }
   };
@@ -209,6 +272,7 @@ export function AuthProvider({ children }) {
   const logout = async () => {
     try {
       await AsyncStorage.removeItem("authToken");
+      await AsyncStorage.removeItem("refreshToken");
       await AsyncStorage.removeItem("userData");
       setUser(null);
     } catch (error) {
@@ -217,7 +281,9 @@ export function AuthProvider({ children }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, login, signup, logout }}>
+    <AuthContext.Provider
+      value={{ user, isLoading, login, signup, logout, getValidAccessToken }}
+    >
       {children}
     </AuthContext.Provider>
   );
