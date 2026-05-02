@@ -1044,46 +1044,6 @@ export default function DiscoverScreen() {
               style={[styles.searchInput, { color: colors.text }]}
             />
           </View>
-
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.filterRow}
-          >
-            {filterChips.map((chip, idx) => {
-              const isActive = chip.key === activeFilter;
-              return (
-                <TouchableOpacity
-                  key={`${chip.key}-${idx}`}
-                  onPress={() => setActiveFilter(chip.key)}
-                  style={[
-                    styles.chip,
-                    {
-                      backgroundColor: isActive
-                        ? colors.primary
-                        : colors.background,
-                      borderColor: isActive ? colors.primary : colors.lightGray,
-                    },
-                  ]}
-                >
-                  <View
-                    style={[
-                      styles.chipDot,
-                      { backgroundColor: isActive ? "#FFFFFF" : chip.dot },
-                    ]}
-                  />
-                  <Text
-                    style={[
-                      styles.chipText,
-                      { color: isActive ? "#FFFFFF" : colors.text },
-                    ]}
-                  >
-                    {chip.label}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
         </View>
 
         {isLoading ? (
@@ -1103,7 +1063,49 @@ export default function DiscoverScreen() {
           </View>
         ) : (
           <>
-            <SectionHeader title="Trending topics" colors={colors} />
+            <View style={{ paddingBottom: 8 }}>
+              <SectionHeader title="Trending topics" colors={colors} />
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.filterRow}
+              >
+                {filterChips.map((chip, idx) => {
+                  const isActive = chip.key === activeFilter;
+                  return (
+                    <TouchableOpacity
+                      key={`${chip.key}-${idx}`}
+                      onPress={() => setActiveFilter(chip.key)}
+                      style={[
+                        styles.chip,
+                        {
+                          backgroundColor: isActive
+                            ? colors.primary
+                            : colors.background,
+                          borderColor: isActive ? colors.primary : colors.lightGray,
+                        },
+                      ]}
+                    >
+                      <View
+                        style={[
+                          styles.chipDot,
+                          { backgroundColor: isActive ? "#FFFFFF" : chip.dot },
+                        ]}
+                      />
+                      <Text
+                        style={[
+                          styles.chipText,
+                          { color: isActive ? "#FFFFFF" : colors.text },
+                        ]}
+                      >
+                        {chip.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            </View>
+
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -1608,7 +1610,7 @@ const styles = StyleSheet.create({
   topBar: {
     paddingTop: 12,
     paddingHorizontal: 12,
-    paddingBottom: 2,
+    paddingBottom: 12,
     borderWidth: 1,
     borderRadius: 12,
   },
@@ -1620,7 +1622,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    marginBottom: 12,
+    marginBottom: 0,
   },
   searchInput: {
     flex: 1,
