@@ -756,10 +756,20 @@ export default function DiscoverScreen() {
       setTopics(data?.details?.topics?.length ? data.details.topics : TOPICS);
       setLocations(
         data?.details?.locations?.length
-          ? data.details.locations.map((item) => ({
-              ...item,
-              topLabel: item.topLabel || item.top_label || item.name,
-            }))
+          ? (() => {
+              const seen = new Set();
+              return data.details.locations
+                .filter((item) => {
+                  const key = (item.name || item.topLabel || "").toLowerCase();
+                  if (seen.has(key)) return false;
+                  seen.add(key);
+                  return true;
+                })
+                .map((item) => ({
+                  ...item,
+                  topLabel: item.topLabel || item.top_label || item.name,
+                }));
+            })()
           : LOCATIONS,
       );
       setEvents(
