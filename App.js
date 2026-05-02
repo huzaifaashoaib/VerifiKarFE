@@ -4,6 +4,7 @@ import Slider from "@react-native-community/slider";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { NavigationContainer } from "@react-navigation/native";
 import { createStackNavigator } from "@react-navigation/stack";
+import * as Location from "expo-location";
 import { useState } from "react";
 import {
     ActivityIndicator,
@@ -41,6 +42,11 @@ function HeaderButtons() {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [searchOffset, setSearchOffset] = useState(0);
+  const [hasMoreResults, setHasMoreResults] = useState(true);
+  const [searchError, setSearchError] = useState("");
+  const [searchHasRun, setSearchHasRun] = useState(false);
   const { colors } = useTheme();
   const {
     radiusKm,
@@ -70,25 +76,66 @@ function HeaderButtons() {
     setSearchVisible(true);
   };
 
-  const runSearch = async () => {
+  // New logic: avoid passing TextInput events into runSearch.
+  const handleSearchSubmit = () => runSearch(false);
+
+  const runSearch = async (isLoadMore = false) => {
     const query = searchQuery.trim();
     if (!query) {
       setSearchResults([]);
+      setSearchError("");
+      setSearchHasRun(false);
+      setSearchOffset(0);
+      setHasMoreResults(true);
       return;
     }
 
     try {
-      setIsSearching(true);
+      if (isLoadMore) {
+        setIsLoadingMore(true);
+        setSearchError("");
+      } else {
+        setIsSearching(true);
+        setSearchResults([]);
+        setSearchOffset(0);
+        setHasMoreResults(true);
+        setSearchError("");
+        setSearchHasRun(false);
+      }
+
       const token = await AsyncStorage.getItem("authToken");
+      const limit = 20;
+      const nextOffset = isLoadMore ? searchOffset + limit : 0;
+
+      // New logic: fetch live user location with fallback to defaults.
+      let latitude = 24.8607;
+      let longitude = 67.0099;
+      let radiusKm = "50";
+
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status === "granted") {
+          const current = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.Balanced,
+            maximumAge: 5000,
+            timeout: 10000,
+          });
+          latitude = current.coords.latitude;
+          longitude = current.coords.longitude;
+        }
+      } catch (locationError) {
+        // Fallback to default coordinates when location is unavailable.
+      }
+
       const queryParams = new URLSearchParams();
-      queryParams.append("lat", "24.8607");
-      queryParams.append("lon", "67.0099");
-      queryParams.append("radius_km", "50");
+      queryParams.append("lat", latitude.toString());
+      queryParams.append("lon", longitude.toString());
+      queryParams.append("radius_km", radiusKm);
       queryParams.append("max_days_old", maxDaysOld.toString());
       queryParams.append("search", query);
       queryParams.append("global_search", "true");
-      queryParams.append("skip", "0");
-      queryParams.append("limit", "20");
+      queryParams.append("skip", nextOffset.toString());
+      queryParams.append("limit", limit.toString());
 
       const response = await fetch(
         `${API_BASE_URL}/feed?${queryParams.toString()}`,
@@ -102,16 +149,32 @@ function HeaderButtons() {
       );
 
       const data = await response.json();
-      if (!response.ok || !data?.success) {
-        setSearchResults([]);
-        return;
+      if (
+        !response.ok ||
+        !data?.success ||
+        !Array.isArray(data?.details?.posts)
+      ) {
+        throw new Error("Search failed. Please try again.");
       }
 
-      setSearchResults(data?.details?.posts || []);
+      const newResults = data.details.posts;
+      setSearchResults((prev) =>
+        isLoadMore ? [...prev, ...newResults] : newResults,
+      );
+      setSearchOffset(nextOffset);
+      setHasMoreResults(newResults.length === limit);
+      setSearchHasRun(true);
     } catch (e) {
-      setSearchResults([]);
+      // New logic: surface search errors clearly in the modal.
+      const message = e?.message || "Search failed. Please try again.";
+      setSearchError(message);
+      if (!isLoadMore) {
+        setSearchResults([]);
+        setSearchHasRun(true);
+      }
     } finally {
       setIsSearching(false);
+      setIsLoadingMore(false);
     }
   };
 
@@ -119,7 +182,12 @@ function HeaderButtons() {
     setSearchVisible(false);
     setSearchQuery("");
     setSearchResults([]);
+    setSearchError("");
+    setSearchHasRun(false);
+    setSearchOffset(0);
+    setHasMoreResults(true);
     setIsSearching(false);
+    setIsLoadingMore(false);
   };
 
   const renderSearchItem = ({ item }) => {
@@ -247,11 +315,20 @@ function HeaderButtons() {
                   placeholder="Search by keyword or category"
                   placeholderTextColor={colors.gray}
                   value={searchQuery}
-                  onChangeText={setSearchQuery}
-                  onSubmitEditing={runSearch}
+                  onChangeText={(text) => {
+                    // New logic: reset error state on input change.
+                    setSearchQuery(text);
+                    setSearchError("");
+                    setSearchHasRun(false);
+                  }}
+                  onSubmitEditing={handleSearchSubmit}
                   returnKeyType="search"
+                  editable={!isSearching}
                 />
-                <TouchableOpacity onPress={runSearch}>
+                <TouchableOpacity
+                  onPress={handleSearchSubmit}
+                  disabled={isSearching}
+                >
                   <Text
                     style={[styles.searchActionText, { color: colors.primary }]}
                   >
@@ -272,11 +349,17 @@ function HeaderButtons() {
                     >
                       Type a keyword and tap Search.
                     </Text>
-                  ) : searchResults.length === 0 ? (
+                  ) : searchError ? (
                     <Text
                       style={[styles.comingSoonText, { color: colors.gray }]}
                     >
-                      No results found.
+                      {searchError}
+                    </Text>
+                  ) : searchHasRun && searchResults.length === 0 ? (
+                    <Text
+                      style={[styles.comingSoonText, { color: colors.gray }]}
+                    >
+                      No results found for your search.
                     </Text>
                   ) : (
                     <FlatList
@@ -285,6 +368,41 @@ function HeaderButtons() {
                       renderItem={renderSearchItem}
                       contentContainerStyle={styles.searchResultsList}
                       showsVerticalScrollIndicator={false}
+                      ListFooterComponent={
+                        hasMoreResults && searchResults.length > 0 ? (
+                          <View style={styles.searchFooter}>
+                            <TouchableOpacity
+                              onPress={() => runSearch(true)}
+                              disabled={isLoadingMore}
+                            >
+                              {isLoadingMore ? (
+                                <ActivityIndicator
+                                  size="small"
+                                  color={colors.primary}
+                                />
+                              ) : (
+                                <Text
+                                  style={[
+                                    styles.searchActionText,
+                                    { color: colors.primary },
+                                  ]}
+                                >
+                                  Load More
+                                </Text>
+                              )}
+                            </TouchableOpacity>
+                          </View>
+                        ) : searchError ? (
+                          <Text
+                            style={[
+                              styles.comingSoonText,
+                              { color: colors.gray },
+                            ]}
+                          >
+                            {searchError}
+                          </Text>
+                        ) : null
+                      }
                     />
                   )}
                 </>
@@ -873,6 +991,10 @@ const styles = StyleSheet.create({
   searchResultsList: {
     paddingTop: 12,
     paddingBottom: 12,
+  },
+  searchFooter: {
+    paddingVertical: 16,
+    alignItems: "center",
   },
   searchResultCard: {
     borderWidth: 1,

@@ -1,23 +1,21 @@
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useNavigation } from "@react-navigation/native";
 import * as Location from "expo-location";
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import {
-  View,
-  Text,
-  StyleSheet,
-  Modal,
-  TouchableOpacity,
-  Alert,
-  Platform,
-  StatusBar,
-  Animated,
+    Alert,
+    Modal,
+    StatusBar,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { API_BASE_URL } from "../config";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../styles/ThemeContext";
-import { useNavigation } from "@react-navigation/native";
 
 // Step components
 import CameraStep from "./report/CameraStep";
@@ -34,7 +32,7 @@ const STEPS = {
 
 export default function ReportScreen() {
   const { colors, isDark } = useTheme();
-  const { user } = useAuth();
+  const { user, getValidAccessToken } = useAuth();
   const navigation = useNavigation();
 
   // Step state
@@ -63,13 +61,14 @@ export default function ReportScreen() {
     const retryPendingReports = async () => {
       try {
         const pendingReports = JSON.parse(
-          (await AsyncStorage.getItem("@verifikar_pending_reports")) || "[]"
+          (await AsyncStorage.getItem("@verifikar_pending_reports")) || "[]",
         );
         if (pendingReports.length === 0) return;
 
         setPendingCount(pendingReports.length);
 
-        const latestToken = await AsyncStorage.getItem("authToken");
+        // New logic: refresh token before retrying pending reports.
+        const latestToken = await getValidAccessToken();
         if (!latestToken) {
           return;
         }
@@ -83,10 +82,10 @@ export default function ReportScreen() {
             formData.append("location", JSON.stringify(report.locationData));
 
             const images = report.mediaItems.filter(
-              (item) => item.type === "image"
+              (item) => item.type === "image",
             );
             const videos = report.mediaItems.filter(
-              (item) => item.type === "video"
+              (item) => item.type === "video",
             );
 
             images.forEach((image, index) => {
@@ -125,11 +124,11 @@ export default function ReportScreen() {
 
         if (successfulIds.length > 0) {
           const remaining = pendingReports.filter(
-            (r) => !successfulIds.includes(r.id)
+            (r) => !successfulIds.includes(r.id),
           );
           await AsyncStorage.setItem(
             "@verifikar_pending_reports",
-            JSON.stringify(remaining)
+            JSON.stringify(remaining),
           );
           setPendingCount(remaining.length);
         }
@@ -177,7 +176,8 @@ export default function ReportScreen() {
     try {
       const { locationData, descriptionText, mediaItems } = reportData;
 
-      const currentToken = await AsyncStorage.getItem("authToken");
+      // New logic: refresh token before submitting report.
+      const currentToken = await getValidAccessToken();
 
       const formData = new FormData();
       formData.append("raw_text", descriptionText);
@@ -208,7 +208,9 @@ export default function ReportScreen() {
 
       const response = await fetch(`${API_BASE_URL}/reports/submit`, {
         method: "POST",
-        headers: currentToken ? { Authorization: `Bearer ${currentToken}` } : {},
+        headers: currentToken
+          ? { Authorization: `Bearer ${currentToken}` }
+          : {},
         body: formData,
       });
 
@@ -217,7 +219,7 @@ export default function ReportScreen() {
       if (!response.ok) {
         if (response.status === 401) {
           const pendingReports = JSON.parse(
-            (await AsyncStorage.getItem("@verifikar_pending_reports")) || "[]"
+            (await AsyncStorage.getItem("@verifikar_pending_reports")) || "[]",
           );
           pendingReports.push({
             id: Date.now(),
@@ -227,21 +229,21 @@ export default function ReportScreen() {
           });
           await AsyncStorage.setItem(
             "@verifikar_pending_reports",
-            JSON.stringify(pendingReports)
+            JSON.stringify(pendingReports),
           );
           setPendingCount(pendingReports.length);
 
           Alert.alert(
             "Session Expired",
             "Your report is saved. Please sign in again and it will retry automatically.",
-            [{ text: "OK" }]
+            [{ text: "OK" }],
           );
           return;
         }
 
         // Store failed report for retry
         const pendingReports = JSON.parse(
-          (await AsyncStorage.getItem("@verifikar_pending_reports")) || "[]"
+          (await AsyncStorage.getItem("@verifikar_pending_reports")) || "[]",
         );
         pendingReports.push({
           id: Date.now(),
@@ -251,20 +253,20 @@ export default function ReportScreen() {
         });
         await AsyncStorage.setItem(
           "@verifikar_pending_reports",
-          JSON.stringify(pendingReports)
+          JSON.stringify(pendingReports),
         );
         setPendingCount(pendingReports.length);
 
         Alert.alert(
           "Submission Queued",
           "Your report was saved and will be submitted when connection improves.",
-          [{ text: "OK" }]
+          [{ text: "OK" }],
         );
       }
     } catch (error) {
       // Store for retry on network failure
       const pendingReports = JSON.parse(
-        (await AsyncStorage.getItem("@verifikar_pending_reports")) || "[]"
+        (await AsyncStorage.getItem("@verifikar_pending_reports")) || "[]",
       );
       pendingReports.push({
         id: Date.now(),
@@ -274,14 +276,14 @@ export default function ReportScreen() {
       });
       await AsyncStorage.setItem(
         "@verifikar_pending_reports",
-        JSON.stringify(pendingReports)
+        JSON.stringify(pendingReports),
       );
       setPendingCount(pendingReports.length);
 
       Alert.alert(
         "Saved Offline",
         "Your report was saved and will be submitted when you're back online.",
-        [{ text: "OK" }]
+        [{ text: "OK" }],
       );
     }
   };
@@ -292,7 +294,7 @@ export default function ReportScreen() {
     if (!description.trim()) {
       Alert.alert(
         "Missing Information",
-        "Please add a description of what happened."
+        "Please add a description of what happened.",
       );
       goToStep(STEPS.DESCRIPTION);
       return;
@@ -310,7 +312,8 @@ export default function ReportScreen() {
     setShowConfirmModal(false);
 
     // Validate token first
-    const token = await AsyncStorage.getItem("authToken");
+    // New logic: refresh token before validating.
+    const token = await getValidAccessToken();
     if (!token) {
       Alert.alert("Sign In Required", "Please sign in to submit your report.");
       return;
@@ -334,7 +337,7 @@ export default function ReportScreen() {
         } else {
           Alert.alert(
             "Location Issue",
-            "Please select a location using the map."
+            "Please select a location using the map.",
           );
           return;
         }
