@@ -1399,12 +1399,14 @@ export default function HomeScreen() {
 
       // Build query parameters
       const queryParams = new URLSearchParams();
-      queryParams.append("skip", paginationOffset.toString());
-      queryParams.append("limit", "20");
+      // queryParams.append("skip", paginationOffset.toString());
+      // queryParams.append("limit", "20");
+
+      queryParams.append('hours_lookback',"720")
       
       // Step 52: Include user location for location-aware recommendations
-      queryParams.append("user_location_lat", userLocation.latitude.toString());
-      queryParams.append("user_location_lon", userLocation.longitude.toString());
+      // queryParams.append("user_location_lat", userLocation.latitude.toString());
+      // queryParams.append("user_location_lon", userLocation.longitude.toString());
 
       const endpoint = `${API_BASE_URL}/posts/recommendations?${queryParams}`;
       const startedAt = Date.now();
