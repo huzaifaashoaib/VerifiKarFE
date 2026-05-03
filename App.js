@@ -5,9 +5,13 @@ import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { NavigationContainer } from "@react-navigation/native";
 import { createStackNavigator } from "@react-navigation/stack";
 import * as Location from "expo-location";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import {
+  setupCompleteNotificationFlow,
+} from "./services/notificationService";
 import {
     ActivityIndicator,
+    Alert,
     FlatList,
     Modal,
     ScrollView,
@@ -17,6 +21,10 @@ import {
     TouchableOpacity,
     View,
 } from "react-native";
+import * as Notifications from "expo-notifications";
+import * as Device from "expo-device";
+
+
 
 import { API_BASE_URL } from "./config";
 import { AuthProvider, useAuth } from "./context/AuthContext";
@@ -34,6 +42,7 @@ import { ThemeProvider, useTheme } from "./styles/ThemeContext";
 
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
+
 
 function HeaderButtons() {
   const [settingsVisible, setSettingsVisible] = useState(false);
@@ -781,6 +790,82 @@ function AuthenticatedNavigator() {
 function InnerApp() {
   const { colors, navigationTheme } = useTheme();
   const { user, isLoading } = useAuth();
+  const [notificationCleanup, setNotificationCleanup] = useState(null);
+
+  // Step 51: Register notifications on login
+  useEffect(() => {
+    if (user && !isLoading) {
+      const initializeNotifications = async () => {
+        try {
+          // DEBUG: Check device and permissions
+          const isPhysical = Device.isDevice;
+          console.log("[DEBUG] Physical device?", isPhysical);
+          
+          const permissions = await Notifications.getPermissionsAsync();
+          console.log("[DEBUG] Current permissions:", permissions);
+          
+          // Show permission status on screen
+          Alert.alert("📋 Permission Status", JSON.stringify(permissions, null, 2));
+
+          const authToken = await AsyncStorage.getItem("authToken");
+          if (!authToken) {
+            console.warn("[Notifications] No auth token found");
+            return;
+          }
+
+          console.log("[Notifications] Initializing for user:", user.id);
+
+          const result = await setupCompleteNotificationFlow(
+            authToken,
+            // Callback for received notifications
+            (notification) => {
+              console.log("[Notifications] 🔔 RECEIVED:", JSON.stringify(notification, null, 2));
+              Alert.alert("🔔 Notification Received", JSON.stringify(notification, null, 2));
+            },
+            // Callback for user interactions
+            (response) => {
+              console.log("[Notifications] 📱 USER TAPPED:", JSON.stringify(response, null, 2));
+              Alert.alert("📱 User Tapped", JSON.stringify(response, null, 2));
+            }
+          );
+
+          if (result.success) {
+            console.log("[Notifications] ✅ Setup complete!");
+            console.log("[Notifications] Token:", result.token);
+            
+            // Show token on screen for easy copying
+            Alert.alert(
+              "✅ Notifications Enabled",
+              `Token: ${result.token}\n\nYou can now receive notifications!`,
+              [{ text: "OK" }]
+            );
+            
+            // Store cleanup function for logout
+            setNotificationCleanup(() => result.cleanup);
+          } else {
+            console.warn("[Notifications] ❌ Setup failed:", result.error);
+            Alert.alert("❌ Notification Setup Failed", result.error);
+          }
+        } catch (error) {
+          console.error("[Notifications] 🔴 Initialization error:", error);
+          Alert.alert("❌ Notification Error", String(error));
+        }
+      };
+
+      initializeNotifications();
+    } else if (!user && notificationCleanup) {
+      // Clean up notifications on logout
+      notificationCleanup?.();
+      setNotificationCleanup(null);
+    }
+
+    return () => {
+      // Cleanup on unmount
+      if (notificationCleanup) {
+        notificationCleanup?.();
+      }
+    };
+  }, [user, isLoading]);
 
   if (isLoading) {
     return (

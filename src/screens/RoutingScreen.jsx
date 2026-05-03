@@ -21,7 +21,7 @@ import { WebView } from "react-native-webview";
 import { API_BASE_URL, OSM_TILES_URL } from "../../config";
 import { useTheme } from "../../styles/ThemeContext";
 
-const ROUTE_PROXIMITY_METERS = 500;
+const ROUTE_PROXIMITY_METERS = 1500;
 const ON_ROUTE_METERS = 100;
 const OSM_SEARCH_LIMIT = 6;
 const FEED_FETCH_TIMEOUT_MS = 8000;
@@ -102,6 +102,15 @@ function getPointToRouteMinDistanceMeters(point, routePoints) {
 }
 
 function parsePostCoordinate(post) {
+  const geoCoordinates = post?.location?.coordinates;
+  if (Array.isArray(geoCoordinates) && geoCoordinates.length >= 2) {
+    const lng = Number(geoCoordinates[0]);
+    const lat = Number(geoCoordinates[1]);
+    if (Number.isFinite(lat) && Number.isFinite(lng)) {
+      return { latitude: lat, longitude: lng };
+    }
+  }
+
   const possible = [
     post?.location,
     post?.coordinates,
@@ -110,6 +119,7 @@ function parsePostCoordinate(post) {
     { lat: post?.latitude, lng: post?.longitude },
     { lat: post?.location_lat, lng: post?.location_lng },
     { lat: post?.location_lat, lng: post?.location_lon },
+    { lat: post?.location_lat, lng: post?.location_long },
     { lat: post?.location_latitude, lng: post?.location_longitude },
     { lat: post?.location_latitude, lng: post?.location_lon },
     { lat: post?.details?.lat, lng: post?.details?.lng },
@@ -360,16 +370,7 @@ function getLeafletHtml(tileUrl) {
         clearRouteArtifacts();
 
         const coords = payload?.coords || [];
-        if (!coords.length) return;
-
-        const latlngs = coords.map((p) => [p.latitude, p.longitude]);
-        routeLayer = L.polyline(latlngs, {
-          color: '#2563eb',
-          weight: 5,
-          opacity: 0.95,
-          lineCap: 'round',
-          lineJoin: 'round',
-        }).addTo(map);
+        const hasRoute = coords.length > 0;
 
         if (payload?.origin) {
           originMarker = L.marker([payload.origin.latitude, payload.origin.longitude], {
@@ -380,6 +381,17 @@ function getLeafletHtml(tileUrl) {
         if (payload?.destination) {
           destinationMarker = L.marker([payload.destination.latitude, payload.destination.longitude], {
             icon: destinationIcon,
+          }).addTo(map);
+        }
+
+        if (hasRoute) {
+          const latlngs = coords.map((p) => [p.latitude, p.longitude]);
+          routeLayer = L.polyline(latlngs, {
+            color: '#2563eb',
+            weight: 5,
+            opacity: 0.95,
+            lineCap: 'round',
+            lineJoin: 'round',
           }).addTo(map);
         }
 
@@ -400,7 +412,19 @@ function getLeafletHtml(tileUrl) {
           postLayers.push(marker);
         });
 
-        map.fitBounds(routeLayer.getBounds(), { padding: [60, 60] });
+        if (hasRoute && routeLayer) {
+          map.fitBounds(routeLayer.getBounds(), { padding: [60, 60] });
+        } else if (payload?.origin && payload?.destination) {
+          const bounds = L.latLngBounds(
+            [payload.origin.latitude, payload.origin.longitude],
+            [payload.destination.latitude, payload.destination.longitude]
+          );
+          map.fitBounds(bounds, { padding: [60, 60] });
+        } else if (payload?.origin) {
+          map.setView([payload.origin.latitude, payload.origin.longitude], 14);
+        } else if (payload?.destination) {
+          map.setView([payload.destination.latitude, payload.destination.longitude], 14);
+        }
       }
 
       function receiveMessage(raw) {
@@ -477,11 +501,38 @@ export default function RoutingScreen() {
     setDestinationSuggestions([]);
   }, [route?.params?.destination]);
 
+  // Focus map on selected origin location
+  useEffect(() => {
+    if (!origin || !isMapReady || !webViewRef.current) return;
+
+    const zoomScript = `
+      if (map) {
+        map.setView([${origin.latitude}, ${origin.longitude}], 14);
+      }
+      true;
+    `;
+    webViewRef.current.injectJavaScript(zoomScript);
+  }, [origin, isMapReady]);
+
   const searchPlaces = async (text, field) => {
     const query = text.trim();
     if (query.length < 2) {
       if (field === "origin") setOriginSuggestions([]);
       if (field === "destination") setDestinationSuggestions([]);
+      return;
+    }
+
+    if (field === "origin" && origin && originText === origin.address) {
+      setOriginSuggestions([]);
+      return;
+    }
+
+    if (
+      field === "destination" &&
+      destination &&
+      destinationText === destination.address
+    ) {
+      setDestinationSuggestions([]);
       return;
     }
 
@@ -583,7 +634,8 @@ export default function RoutingScreen() {
       address: item.title,
     });
     setOriginText(item.title);
-    setOriginSuggestions([]);
+    setOriginSuggestions([]); // Explicitly hide suggestions
+    setActiveSelectionField("destination"); // Auto-move to destination field
   };
 
   const selectDestination = (item) => {
@@ -593,7 +645,7 @@ export default function RoutingScreen() {
       address: item.title,
     });
     setDestinationText(item.title);
-    setDestinationSuggestions([]);
+    setDestinationSuggestions([]); // Explicitly hide suggestions
   };
 
   const handleUseMyLocation = async () => {
@@ -608,20 +660,50 @@ export default function RoutingScreen() {
         return;
       }
 
-      const current = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced,
-      });
+      // Create abort controller for timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
 
-      const coord = {
-        latitude: current.coords.latitude,
-        longitude: current.coords.longitude,
-      };
+      try {
+        // Try to get current position with high accuracy and timeout
+        const current = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.High,
+          timeInterval: 1000,
+          distanceInterval: 0,
+        });
 
-      setOrigin({ ...coord, address: "My location" });
-      setOriginText("My location");
-      setOriginSuggestions([]);
+        clearTimeout(timeoutId);
+
+        const coord = {
+          latitude: current.coords.latitude,
+          longitude: current.coords.longitude,
+        };
+
+        setOrigin({ ...coord, address: "My location" });
+        setOriginText("My location");
+        setOriginSuggestions([]); // Hide suggestions
+        setActiveSelectionField("destination"); // Move focus to destination
+      } catch (accuracyError) {
+        // If high accuracy times out, fallback to balanced accuracy
+        clearTimeout(timeoutId);
+        const current = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+          timeInterval: 500,
+          distanceInterval: 0,
+        });
+
+        const coord = {
+          latitude: current.coords.latitude,
+          longitude: current.coords.longitude,
+        };
+
+        setOrigin({ ...coord, address: "My location" });
+        setOriginText("My location");
+        setOriginSuggestions([]); // Hide suggestions
+        setActiveSelectionField("destination"); // Move focus to destination
+      }
     } catch (_error) {
-      Alert.alert("Location error", "Unable to fetch your current location.");
+      Alert.alert("Location error", "Unable to fetch your current location. Please try again.");
     } finally {
       setIsUsingLocation(false);
     }
@@ -768,9 +850,14 @@ export default function RoutingScreen() {
     injectRoutePayload(payload);
   };
 
-  const clearRouteDisplay = () => {
+  const clearRouteDisplay = (nextOrigin = origin, nextDestination = destination) => {
     setRouteInfo(null);
-    postRouteToWebView({ coords: [], posts: [] });
+    postRouteToWebView({
+      coords: [],
+      origin: nextOrigin || null,
+      destination: nextDestination || null,
+      posts: [],
+    });
   };
 
   const handleGetRoute = async () => {
@@ -869,8 +956,13 @@ export default function RoutingScreen() {
   };
 
   useEffect(() => {
+    if (!origin && !destination) {
+      clearRouteDisplay(null, null);
+      return;
+    }
+
     if (!origin || !destination) {
-      clearRouteDisplay();
+      clearRouteDisplay(origin, destination);
     }
   }, [origin, destination]);
 
@@ -964,9 +1056,11 @@ export default function RoutingScreen() {
                 value={originText}
                 onChangeText={(text) => {
                   setOriginText(text);
-                  setOriginSuggestions([]);
-                  if (!origin || text !== origin.address) {
+                  if (text.trim().length === 0) {
+                    setOriginSuggestions([]);
                     setOrigin(null);
+                  } else if (!origin || text !== origin.address) {
+                    setOrigin(null); // Clear selected origin if text changes
                   }
                 }}
                 onFocus={() => setActiveSelectionField("origin")}
@@ -1054,9 +1148,11 @@ export default function RoutingScreen() {
                 value={destinationText}
                 onChangeText={(text) => {
                   setDestinationText(text);
-                  setDestinationSuggestions([]);
-                  if (!destination || text !== destination.address) {
+                  if (text.trim().length === 0) {
+                    setDestinationSuggestions([]);
                     setDestination(null);
+                  } else if (!destination || text !== destination.address) {
+                    setDestination(null); // Clear selected destination if text changes
                   }
                 }}
                 onFocus={() => setActiveSelectionField("destination")}

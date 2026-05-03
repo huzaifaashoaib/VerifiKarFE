@@ -114,6 +114,12 @@ export function AuthProvider({ children }) {
         const refreshed = await refreshSession(refreshToken);
         if (refreshed && userData) {
           setUser(JSON.parse(userData));
+        } else {
+          // Token refresh failed - clear everything and force login
+          await AsyncStorage.removeItem("authToken");
+          await AsyncStorage.removeItem("refreshToken");
+          await AsyncStorage.removeItem("userData");
+          setUser(null);
         }
         return;
       }
@@ -123,6 +129,15 @@ export function AuthProvider({ children }) {
       }
     } catch (error) {
       console.log("Error checking login status:", error);
+      // On error, clear auth state to be safe
+      try {
+        await AsyncStorage.removeItem("authToken");
+        await AsyncStorage.removeItem("refreshToken");
+        await AsyncStorage.removeItem("userData");
+      } catch (clearError) {
+        console.log("Error clearing auth state:", clearError);
+      }
+      setUser(null);
     } finally {
       setIsLoading(false);
     }

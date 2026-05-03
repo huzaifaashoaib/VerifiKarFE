@@ -992,6 +992,15 @@ export default function HomeScreen() {
     distance: null,
   });
 
+  // Step 52 & 53: Pagination state for recommendations/feed
+  const [offset, setOffset] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [useRecommendations, setUseRecommendations] = useState(true);
+
+  // Step 54: Store recommendation reasons for display
+  const [postReasons, setPostReasons] = useState({});
+
   const safeAlert = useCallback(
     (title, message, buttons) => {
       if (AppState.currentState === "active" && isFocused) {
@@ -1096,24 +1105,32 @@ export default function HomeScreen() {
   }, []);
 
   useEffect(() => {
+    console.log("[Feed] useEffect triggered: userLocation =", userLocation);
     if (userLocation) {
+      console.log("[Feed] 📍 Location available, calling loadFeed()");
       loadFeed();
+    } else {
+      console.warn("[Feed] ⚠️ No userLocation set yet");
     }
   }, [userLocation, selectedCategories, minCredibility, maxDaysOld]);
 
   const requestLocationPermission = async (showAlert = true) => {
+    console.log("[Location] Requesting location permission...");
     setIsLoadingLocation(true);
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
+      console.log("[Location] Permission status:", status);
       setLocationPermission(status === "granted");
 
       if (status === "granted") {
         try {
+          console.log("[Location] Getting current position...");
           const location = await Location.getCurrentPositionAsync({
             accuracy: Location.Accuracy.Balanced,
             maximumAge: 5000,
             timeout: 10000,
           });
+          console.log("[Location] ✅ Got location:", location.coords);
           setUserLocation({
             latitude: location.coords.latitude,
             longitude: location.coords.longitude,
@@ -1126,18 +1143,19 @@ export default function HomeScreen() {
           );
           setLocationName(actualLocationName);
           console.log(
-            "Using real location:",
+            "[Location] Using real location:",
             location.coords,
             actualLocationName,
           );
         } catch (locError) {
-          console.error("Error getting location:", locError);
+          console.error("[Location] ❌ Error getting location:", locError);
           // Try to get last known location as fallback
           try {
             const lastKnown = await Location.getLastKnownPositionAsync({
               maxAge: 60000,
             });
             if (lastKnown) {
+              console.log("[Location] Using last known location");
               setUserLocation({
                 latitude: lastKnown.coords.latitude,
                 longitude: lastKnown.coords.longitude,
@@ -1149,9 +1167,10 @@ export default function HomeScreen() {
                 lastKnown.coords.longitude,
               );
               setLocationName(lastKnownName);
-              console.log("Using last known location:", lastKnownName);
+              console.log("[Location] Using last known location:", lastKnownName);
             } else {
               // Use a default location (Karachi, Pakistan) if all fails
+              console.log("[Location] Using default location");
               setUserLocation({
                 latitude: 24.8607,
                 longitude: 67.0099,
@@ -1371,6 +1390,104 @@ export default function HomeScreen() {
     }
   }, [userLocation, maxDaysOld, minCredibility, getActiveCategory]);
 
+  // Step 52: Fetch personalized recommendations from backend
+  const fetchRecommendations = useCallback(async (paginationOffset = 0) => {
+    if (!userLocation) return [];
+
+    try {
+      const token = await AsyncStorage.getItem("authToken");
+
+      // Build query parameters
+      const queryParams = new URLSearchParams();
+      queryParams.append("skip", paginationOffset.toString());
+      queryParams.append("limit", "20");
+      
+      // Step 52: Include user location for location-aware recommendations
+      queryParams.append("user_location_lat", userLocation.latitude.toString());
+      queryParams.append("user_location_lon", userLocation.longitude.toString());
+
+      const endpoint = `${API_BASE_URL}/posts/recommendations?${queryParams}`;
+      const startedAt = Date.now();
+
+      console.log("[Recommendations] Fetching offset:", paginationOffset);
+      console.log("[Recommendations] Endpoint:", endpoint);
+      console.log("[Recommendations] User location:", userLocation);
+
+      let response;
+      try {
+        response = await fetch(
+          endpoint,
+          {
+            method: "GET",
+            headers: {
+              "Content-Type": "application/json",
+              ...(token && { Authorization: `Bearer ${token}` }),
+            },
+          },
+          15000,
+        );
+      } catch (fetchError) {
+        console.error("[Recommendations] Network/timeout error:", fetchError);
+        throw new Error(
+          "Network request failed. Verify API URL and emulator connectivity.",
+        );
+      }
+
+      console.log(
+        "[Recommendations] Response:",
+        response.status,
+        response.statusText,
+        `(${Date.now() - startedAt}ms)`,
+      );
+
+      const rawText = await response.text();
+      let data = null;
+      try {
+        data = rawText ? JSON.parse(rawText) : null;
+      } catch (parseError) {
+        console.error("[Recommendations] JSON parse error:", parseError);
+      }
+
+      if (!response.ok) {
+        console.error(
+          "[Recommendations] API error payload:",
+          rawText?.slice(0, 600) || "<empty>",
+        );
+        throw new Error(`Failed to fetch recommendations: ${response.status}`);
+      }
+
+      console.log("[Recommendations] Response payload keys:", data ? Object.keys(data) : null);
+
+      if (data.success && data.details?.recommendations) {
+        console.log("[Recommendations] Posts received:", data.details.recommendations.length);
+
+        // Step 54: Extract recommendation reasons for each post
+        const reasons = {};
+        data.details.recommendations.forEach((post) => {
+          if (post.reason) {
+            reasons[post.id] = post.reason;
+          }
+        });
+        
+        // Store reasons for UI display
+        setPostReasons((prev) => ({ ...prev, ...reasons }));
+
+        // Sort posts by created_at from latest to earliest
+        const sortedPosts = data.details.recommendations.sort((a, b) => {
+          return new Date(b.created_at) - new Date(a.created_at);
+        });
+
+        return sortedPosts;
+      }
+
+      console.warn("[Recommendations] Unexpected response shape:", data);
+      return [];
+    } catch (error) {
+      console.error("Error fetching recommendations:", error);
+      throw error;
+    }
+  }, [userLocation, selectedCategories, minCredibility, maxDaysOld]);
+
   // Batch geocode locations in background (non-blocking)
   const batchGeocodeLocations = useCallback(
     async (postsToGeocode) => {
@@ -1420,65 +1537,110 @@ export default function HomeScreen() {
     [locationCache],
   );
 
-  const loadFeed = async () => {
+  const loadFeed = async (paginationOffset = 0) => {
+    console.log("[Feed] loadFeed() called with offset:", paginationOffset);
     try {
       setError(null);
 
-      // STALE-WHILE-REVALIDATE: Load cached data first for instant display
-      if (posts.length === 0) {
-        try {
-          const cachedData = await AsyncStorage.getItem(
-            "@verifikar_feed_cache",
-          );
-          if (cachedData) {
-            const { posts: cachedPosts, timestamp } = JSON.parse(cachedData);
-            // Use cache if it's less than 30 minutes old
-            const cacheAge = Date.now() - timestamp;
-            if (cacheAge < 30 * 60 * 1000 && cachedPosts.length > 0) {
-              setPosts(cachedPosts);
-              // Don't show loading spinner when we have cached data
-              setIsLoading(false);
+      // Step 53: Handle pagination logic
+      if (paginationOffset === 0) {
+        console.log("[Feed] Initial load (offset=0)");
+        // Initial load - show loading indicator or cached data
+        if (posts.length === 0) {
+          try {
+            const cacheKey = useRecommendations
+              ? "@verifikar_recommendations_cache"
+              : "@verifikar_feed_cache";
+            const cachedData = await AsyncStorage.getItem(cacheKey);
+            if (cachedData) {
+              const { posts: cachedPosts, timestamp } = JSON.parse(cachedData);
+              // Use cache if it's less than 30 minutes old
+              const cacheAge = Date.now() - timestamp;
+              if (cacheAge < 30 * 60 * 1000 && cachedPosts.length > 0) {
+                console.log("[Feed] ✅ Using cached data:", cachedPosts.length, "posts");
+                setPosts(cachedPosts);
+                setIsLoading(false);
+              } else {
+                console.log("[Feed] Cache expired, fetching fresh data");
+                setIsLoading(true);
+              }
             } else {
+              console.log("[Feed] No cache found, fetching fresh data");
               setIsLoading(true);
             }
-          } else {
+          } catch (cacheError) {
+            console.log("[Feed] Cache read error:", cacheError);
             setIsLoading(true);
           }
-        } catch (cacheError) {
-          console.log("Cache read error:", cacheError);
+        } else {
+          console.log("[Feed] Posts already exist, refreshing");
           setIsLoading(true);
         }
       } else {
-        setIsLoading(true);
+        console.log("[Feed] Load more (offset =", paginationOffset + ")");
+        // Loading more - show load more spinner
+        setIsLoadingMore(true);
       }
 
-      // Fetch fresh data in background
-      const feedData = await fetchFeed();
-      setPosts(feedData);
+      // Step 52: Fetch from recommendations or feed endpoint
+      console.log("[Feed] Fetching from:", useRecommendations ? "recommendations" : "feed", "endpoint");
+      const feedData = useRecommendations
+        ? await fetchRecommendations(paginationOffset)
+        : await fetchFeed();
+
+      console.log("[Feed] ✅ Received", feedData.length, "posts");
+
+      // Step 53: Update posts based on pagination offset
+      if (paginationOffset === 0) {
+        // Initial load - replace posts
+        console.log("[Feed] Setting initial posts");
+        setPosts(feedData);
+        setOffset(0);
+        setHasMore(feedData.length >= 20);
+      } else {
+        // Load more - append to existing posts
+        console.log("[Feed] Appending", feedData.length, "posts");
+        setPosts((prev) => [...prev, ...feedData]);
+        setOffset(paginationOffset);
+        setHasMore(feedData.length >= 20);
+      }
 
       // Cache the fresh data
       try {
+        const cacheKey = useRecommendations
+          ? "@verifikar_recommendations_cache"
+          : "@verifikar_feed_cache";
         await AsyncStorage.setItem(
-          "@verifikar_feed_cache",
+          cacheKey,
           JSON.stringify({
             posts: feedData,
             timestamp: Date.now(),
           }),
         );
+        console.log("[Feed] ✅ Cached successfully");
       } catch (cacheError) {
-        console.log("Cache write error:", cacheError);
+        console.log("[Feed] Cache write error:", cacheError);
       }
 
       // Start background geocoding after posts are set
       setTimeout(() => batchGeocodeLocations(feedData), 100);
     } catch (error) {
-      console.error("Error loading feed:", error);
+      console.error("[Feed] ❌ Error loading feed:", error);
       // Only show error if we have no cached data
       if (posts.length === 0) {
         setError(error.message || "Failed to load feed");
       }
     } finally {
       setIsLoading(false);
+      setIsLoadingMore(false);
+    }
+  };
+
+  // Step 53: Load more posts on pagination
+  const handleLoadMore = () => {
+    if (!isLoadingMore && hasMore && !isLoading) {
+      const nextOffset = offset + 20;
+      loadFeed(nextOffset);
     }
   };
 
@@ -1486,6 +1648,7 @@ export default function HomeScreen() {
     try {
       setIsRefreshing(true);
       setError(null);
+      setOffset(0);
 
       // Refresh location
       if (locationPermission) {
@@ -1504,13 +1667,20 @@ export default function HomeScreen() {
         }
       }
 
-      const feedData = await fetchFeed();
+      // Fetch fresh data
+      const feedData = useRecommendations
+        ? await fetchRecommendations(0)
+        : await fetchFeed();
       setPosts(feedData);
+      setHasMore(feedData.length >= 20);
 
       // Update cache on refresh
       try {
+        const cacheKey = useRecommendations
+          ? "@verifikar_recommendations_cache"
+          : "@verifikar_feed_cache";
         await AsyncStorage.setItem(
-          "@verifikar_feed_cache",
+          cacheKey,
           JSON.stringify({
             posts: feedData,
             timestamp: Date.now(),
@@ -1891,6 +2061,30 @@ export default function HomeScreen() {
                 )}
               </View>
 
+              {/* Step 54: Recommendation reason badge */}
+              {useRecommendations && postReasons[item.id] && (
+                <View
+                  style={[
+                    twitterStyles.recommendationBadge,
+                    { backgroundColor: colors.primary + "15" },
+                  ]}
+                >
+                  <Ionicons
+                    name="sparkles"
+                    size={12}
+                    color={colors.primary}
+                  />
+                  <Text
+                    style={[
+                      twitterStyles.recommendationBadgeText,
+                      { color: colors.primary },
+                    ]}
+                  >
+                    {postReasons[item.id]}
+                  </Text>
+                </View>
+              )}
+
               {/* Subtext: Location (tappable with visual hint) */}
               <TouchableOpacity
                 style={twitterStyles.locationTouchable}
@@ -1967,6 +2161,8 @@ export default function HomeScreen() {
       showCredibilityInfo,
       showLocationInfo,
       navigation,
+      postReasons,
+      useRecommendations,
     ],
   );
 
@@ -2134,6 +2330,40 @@ export default function HomeScreen() {
             </View>
           )}
         </TouchableOpacity>
+
+        {/* Step 52: Toggle button for recommendations vs feed */}
+        <TouchableOpacity
+          style={[
+            styles.feedToggleButton,
+            {
+              backgroundColor: useRecommendations
+                ? colors.primary
+                : colors.background,
+              borderColor: colors.border,
+            },
+          ]}
+          onPress={() => {
+            setUseRecommendations(!useRecommendations);
+            setPosts([]);
+            setOffset(0);
+            setHasMore(true);
+          }}
+          activeOpacity={0.7}
+        >
+          <Ionicons
+            name={useRecommendations ? "sparkles" : "list"}
+            size={16}
+            color={useRecommendations ? "#fff" : colors.text}
+          />
+          <Text
+            style={[
+              styles.feedToggleText,
+              { color: useRecommendations ? "#fff" : colors.text },
+            ]}
+          >
+            {useRecommendations ? "Smart Feed" : "All Posts"}
+          </Text>
+        </TouchableOpacity>
       </View>
 
       {/* Feed List */}
@@ -2156,6 +2386,20 @@ export default function HomeScreen() {
             tintColor={colors.primary}
             colors={[colors.primary]}
           />
+        }
+        // Step 53: Pagination - load more on reaching end
+        onEndReached={() => handleLoadMore()}
+        onEndReachedThreshold={0.5}
+        // Step 53: Show loading indicator while loading more
+        ListFooterComponent={
+          isLoadingMore && hasMore ? (
+            <View style={{ padding: 16, alignItems: "center" }}>
+              <ActivityIndicator size="small" color={colors.primary} />
+              <Text style={{ color: colors.gray, marginTop: 8 }}>
+                Loading more posts...
+              </Text>
+            </View>
+          ) : null
         }
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
@@ -2392,6 +2636,24 @@ const styles = StyleSheet.create({
   locationBar: {
     paddingHorizontal: 16,
     paddingVertical: 10,
+    flexDirection: "row",
+    gap: 10,
+    alignItems: "center",
+  },
+  feedToggleButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    minWidth: 90,
+    justifyContent: "center",
+  },
+  feedToggleText: {
+    fontSize: 12,
+    fontWeight: "600",
   },
   locationInfo: {
     flexDirection: "row",
@@ -3062,6 +3324,21 @@ const twitterStyles = StyleSheet.create({
   categoryText: {
     fontSize: 11,
     fontWeight: "600",
+  },
+  // Step 54: Recommendation reason badge
+  recommendationBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
+    gap: 5,
+    marginTop: 6,
+    alignSelf: "flex-start",
+  },
+  recommendationBadgeText: {
+    fontSize: 12,
+    fontWeight: "500",
   },
   // Location & credibility row
   metaRow: {
