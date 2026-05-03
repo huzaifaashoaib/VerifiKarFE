@@ -4,11 +4,10 @@ import Slider from "@react-native-community/slider";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { NavigationContainer } from "@react-navigation/native";
 import { createStackNavigator } from "@react-navigation/stack";
+import * as Device from "expo-device";
 import * as Location from "expo-location";
-import { useEffect, useState } from "react";
-import {
-  setupCompleteNotificationFlow,
-} from "./services/notificationService";
+import * as Notifications from "expo-notifications";
+import { useEffect, useRef, useState } from "react";
 import {
     ActivityIndicator,
     Alert,
@@ -21,10 +20,7 @@ import {
     TouchableOpacity,
     View,
 } from "react-native";
-import * as Notifications from "expo-notifications";
-import * as Device from "expo-device";
-
-
+import { setupCompleteNotificationFlow } from "./services/notificationService";
 
 import { API_BASE_URL } from "./config";
 import { AuthProvider, useAuth } from "./context/AuthContext";
@@ -43,7 +39,6 @@ import { ThemeProvider, useTheme } from "./styles/ThemeContext";
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
 
-
 function HeaderButtons() {
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [filterVisible, setFilterVisible] = useState(false);
@@ -56,6 +51,11 @@ function HeaderButtons() {
   const [hasMoreResults, setHasMoreResults] = useState(true);
   const [searchError, setSearchError] = useState("");
   const [searchHasRun, setSearchHasRun] = useState(false);
+  const lastSearchLocationRef = useRef({
+    lat: 24.8607,
+    lon: 67.0099,
+    ts: 0,
+  });
   const { colors } = useTheme();
   const {
     radiusKm,
@@ -117,20 +117,29 @@ function HeaderButtons() {
       const nextOffset = isLoadMore ? searchOffset + limit : 0;
 
       // New logic: fetch live user location with fallback to defaults.
-      let latitude = 24.8607;
-      let longitude = 67.0099;
+      const now = Date.now();
+      const cachedLocation = lastSearchLocationRef.current;
+      let latitude = cachedLocation.lat ?? 24.8607;
+      let longitude = cachedLocation.lon ?? 67.0099;
       let radiusKm = "50";
 
       try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status === "granted") {
-          const current = await Location.getCurrentPositionAsync({
-            accuracy: Location.Accuracy.Balanced,
-            maximumAge: 5000,
-            timeout: 10000,
-          });
-          latitude = current.coords.latitude;
-          longitude = current.coords.longitude;
+        if (now - cachedLocation.ts > 30000) {
+          const { status } = await Location.requestForegroundPermissionsAsync();
+          if (status === "granted") {
+            const current = await Location.getCurrentPositionAsync({
+              accuracy: Location.Accuracy.Balanced,
+              maximumAge: 5000,
+              timeout: 10000,
+            });
+            latitude = current.coords.latitude;
+            longitude = current.coords.longitude;
+            lastSearchLocationRef.current = {
+              lat: latitude,
+              lon: longitude,
+              ts: now,
+            };
+          }
         }
       } catch (locationError) {
         // Fallback to default coordinates when location is unavailable.
@@ -800,12 +809,15 @@ function InnerApp() {
           // DEBUG: Check device and permissions
           const isPhysical = Device.isDevice;
           console.log("[DEBUG] Physical device?", isPhysical);
-          
+
           const permissions = await Notifications.getPermissionsAsync();
           console.log("[DEBUG] Current permissions:", permissions);
-          
+
           // Show permission status on screen
-          Alert.alert("📋 Permission Status", JSON.stringify(permissions, null, 2));
+          Alert.alert(
+            "📋 Permission Status",
+            JSON.stringify(permissions, null, 2),
+          );
 
           const authToken = await AsyncStorage.getItem("authToken");
           if (!authToken) {
@@ -819,27 +831,36 @@ function InnerApp() {
             authToken,
             // Callback for received notifications
             (notification) => {
-              console.log("[Notifications] 🔔 RECEIVED:", JSON.stringify(notification, null, 2));
-              Alert.alert("🔔 Notification Received", JSON.stringify(notification, null, 2));
+              console.log(
+                "[Notifications] 🔔 RECEIVED:",
+                JSON.stringify(notification, null, 2),
+              );
+              Alert.alert(
+                "🔔 Notification Received",
+                JSON.stringify(notification, null, 2),
+              );
             },
             // Callback for user interactions
             (response) => {
-              console.log("[Notifications] 📱 USER TAPPED:", JSON.stringify(response, null, 2));
+              console.log(
+                "[Notifications] 📱 USER TAPPED:",
+                JSON.stringify(response, null, 2),
+              );
               Alert.alert("📱 User Tapped", JSON.stringify(response, null, 2));
-            }
+            },
           );
 
           if (result.success) {
             console.log("[Notifications] ✅ Setup complete!");
             console.log("[Notifications] Token:", result.token);
-            
+
             // Show token on screen for easy copying
             Alert.alert(
               "✅ Notifications Enabled",
               `Token: ${result.token}\n\nYou can now receive notifications!`,
-              [{ text: "OK" }]
+              [{ text: "OK" }],
             );
-            
+
             // Store cleanup function for logout
             setNotificationCleanup(() => result.cleanup);
           } else {
