@@ -1,5 +1,6 @@
 import * as Notifications from "expo-notifications";
 import * as Device from "expo-device";
+import Constants from "expo-constants";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Platform } from "react-native";
 import { API_BASE_URL } from "../config";
@@ -58,7 +59,9 @@ export const registerForPushNotifications = async () => {
 
     // Get the push token
     let token = null;
-    const projectId = process.env.EXPO_PUBLIC_PROJECT_ID;
+    const projectId =
+      process.env.EXPO_PUBLIC_PROJECT_ID ||
+      Constants.expoConfig?.extra?.eas?.projectId;
 
     if (!projectId) {
       console.warn(
@@ -90,6 +93,7 @@ export const registerForPushNotifications = async () => {
       }
 
       console.log("Push token obtained:", token);
+      console.log("Expo projectId used:", projectId);
       return token;
     } catch (tokenError) {
       console.error("Error obtaining push token:", tokenError);
@@ -262,14 +266,8 @@ export const setupCompleteNotificationFlow = async (
 
     console.log("[📱 Complete Flow] ✅ Step 1 complete. Token:", token?.substring(0, 30) + "...");
 
-    // Step 2: Register token with backend
-    console.log("[📱 Complete Flow] Step 2: Registering token with backend...");
-    const backendRegistration = await registerTokenWithBackend(token, authToken);
-    if (!backendRegistration) {
-      console.warn("[📱 Complete Flow] ⚠️  Token not registered with backend, but continuing");
-    } else {
-      console.log("[📱 Complete Flow] ✅ Step 2 complete. Backend registered");
-    }
+    // Step 2: Skip backend registration (local-only token usage)
+    console.log("[📱 Complete Flow] Step 2: Skipping backend token registration");
 
     // Step 3: Setup listeners
     console.log("[📱 Complete Flow] Step 3: Setting up notification listeners...");

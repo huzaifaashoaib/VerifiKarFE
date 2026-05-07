@@ -51,7 +51,7 @@ npm install --legacy-peer-deps
 ```
 
 ### Step 3: Configure API Endpoint
-Edit `config.js` in the root folder and update the IP address to your backend server:
+Edit `config.js` in the root folder and update the IP address to your computer's LAN address when testing on a physical device:
 
 ```javascript
 // config.js
@@ -103,7 +103,7 @@ npx expo start --web
 
 ### "Network request failed" or API errors
 - [ ] Verify backend server is running on port 8000
-- [ ] Check that `config.js` has the correct IP address
+- [ ] Check that `config.js` has your computer's LAN IP address for physical-device testing
 - [ ] Ensure phone and computer are on the same WiFi network
 - [ ] Try disabling Windows Firewall temporarily
 

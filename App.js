@@ -680,9 +680,15 @@ function AuthNavigator() {
 
 function MainNavigator() {
   const { colors } = useTheme();
+  const { useRecommendations, setUseRecommendations } = useFilters();
+  const [showFeedModeModal, setShowFeedModeModal] = useState(false);
 
   const HeaderTitle = () => (
-    <View style={{ flexDirection: "row", alignItems: "center" }}>
+    <TouchableOpacity
+      style={{ flexDirection: "row", alignItems: "center" }}
+      onPress={() => setShowFeedModeModal(true)}
+      activeOpacity={0.7}
+    >
       <Ionicons
         name="shield-checkmark"
         size={24}
@@ -695,41 +701,42 @@ function MainNavigator() {
       <Text style={{ fontSize: 20, fontWeight: "800", color: colors.primary }}>
         Kar
       </Text>
-    </View>
+    </TouchableOpacity>
   );
 
   return (
-    <Tab.Navigator
-      screenOptions={({ route }) => ({
-        headerShown: true,
-        headerStyle: {
-          backgroundColor: colors.surface,
-          elevation: 0,
-          shadowOpacity: 0,
-          borderBottomWidth: 1,
-          borderBottomColor: colors.border,
-        },
-        headerTintColor: colors.text,
-        headerTitleStyle: {
-          fontWeight: "600",
-          fontSize: 20,
-        },
-        headerTitle: () => <HeaderTitle />,
-        headerRight: () => <HeaderButtons />,
-        tabBarActiveTintColor: colors.primary,
-        tabBarInactiveTintColor: colors.gray,
-        tabBarStyle: { backgroundColor: colors.surface },
-        tabBarIcon: ({ color, size }) => {
-          let iconName;
-          if (route.name === "Home") iconName = "home-outline";
-          else if (route.name === "Report") iconName = "document-text-outline";
-          else if (route.name === "Discover") iconName = "compass-outline";
-          else if (route.name === "Navigate") iconName = "navigate-outline";
-          else if (route.name === "Profile") iconName = "person-circle-outline";
-          return <Ionicons name={iconName} size={size} color={color} />;
-        },
-      })}
-    >
+    <>
+      <Tab.Navigator
+        screenOptions={({ route }) => ({
+          headerShown: true,
+          headerStyle: {
+            backgroundColor: colors.surface,
+            elevation: 0,
+            shadowOpacity: 0,
+            borderBottomWidth: 1,
+            borderBottomColor: colors.border,
+          },
+          headerTintColor: colors.text,
+          headerTitleStyle: {
+            fontWeight: "600",
+            fontSize: 20,
+          },
+          headerTitle: () => <HeaderTitle />,
+          headerRight: () => <HeaderButtons />,
+          tabBarActiveTintColor: colors.primary,
+          tabBarInactiveTintColor: colors.gray,
+          tabBarStyle: { backgroundColor: colors.surface },
+          tabBarIcon: ({ color, size }) => {
+            let iconName;
+            if (route.name === "Home") iconName = "home-outline";
+            else if (route.name === "Report") iconName = "document-text-outline";
+            else if (route.name === "Discover") iconName = "compass-outline";
+            else if (route.name === "Navigate") iconName = "navigate-outline";
+            else if (route.name === "Profile") iconName = "person-circle-outline";
+            return <Ionicons name={iconName} size={size} color={color} />;
+          },
+        })}
+      >
       <Tab.Screen
         name="Home"
         component={HomeScreen}
@@ -758,7 +765,84 @@ function MainNavigator() {
         component={ProfileScreen}
         options={{ title: "Profile" }}
       />
-    </Tab.Navigator>
+      </Tab.Navigator>
+
+      <Modal
+        visible={showFeedModeModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowFeedModeModal(false)}
+      >
+        <View style={styles.feedModeOverlay}>
+          <TouchableOpacity
+            style={styles.feedModeBackdrop}
+            activeOpacity={1}
+            onPress={() => setShowFeedModeModal(false)}
+          />
+          <View style={[styles.feedModeCard, { backgroundColor: colors.surface }]}>
+            <Text style={[styles.feedModeTitle, { color: colors.text }]}> 
+              Feed Mode
+            </Text>
+            <Text style={[styles.feedModeSubtitle, { color: colors.gray }]}> 
+              Choose the feed source
+            </Text>
+
+            <TouchableOpacity
+              style={[
+                styles.feedModeOption,
+                useRecommendations && styles.feedModeOptionActive,
+                {
+                  borderColor: colors.border,
+                  backgroundColor: useRecommendations
+                    ? colors.primary + "20"
+                    : colors.background,
+                },
+              ]}
+              onPress={() => {
+                setUseRecommendations(true);
+                setShowFeedModeModal(false);
+              }}
+            >
+              <Ionicons name="sparkles" size={18} color={colors.primary} />
+              <Text style={[styles.feedModeOptionText, { color: colors.text }]}> 
+                Smart Feed 
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.feedModeOption,
+                !useRecommendations && styles.feedModeOptionActive,
+                {
+                  borderColor: colors.border,
+                  backgroundColor: !useRecommendations
+                    ? colors.primary + "20"
+                    : colors.background,
+                },
+              ]}
+              onPress={() => {
+                setUseRecommendations(false);
+                setShowFeedModeModal(false);
+              }}
+            >
+              <Ionicons name="list" size={18} color={colors.text} />
+              <Text style={[styles.feedModeOptionText, { color: colors.text }]}> 
+                All Posts 
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.feedModeClose, { borderColor: colors.border }]}
+              onPress={() => setShowFeedModeModal(false)}
+            >
+              <Text style={[styles.feedModeCloseText, { color: colors.text }]}> 
+                Close
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+    </>
   );
 }
 
@@ -1071,6 +1155,59 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 16,
     fontWeight: "700",
+  },
+  feedModeOverlay: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  feedModeBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0, 0, 0, 0.45)",
+  },
+  feedModeCard: {
+    width: "84%",
+    borderRadius: 16,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: "rgba(0,0,0,0.08)",
+  },
+  feedModeTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+  },
+  feedModeSubtitle: {
+    fontSize: 12,
+    marginTop: 4,
+    marginBottom: 16,
+  },
+  feedModeOption: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginBottom: 10,
+  },
+  feedModeOptionActive: {
+    borderWidth: 1,
+  },
+  feedModeOptionText: {
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  feedModeClose: {
+    marginTop: 6,
+    alignItems: "center",
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  feedModeCloseText: {
+    fontSize: 14,
+    fontWeight: "600",
   },
   searchInputRow: {
     borderWidth: 1,

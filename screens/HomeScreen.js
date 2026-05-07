@@ -16,6 +16,7 @@ import {
     Modal,
     Pressable,
     RefreshControl,
+    ScrollView,
     StyleSheet,
     Text,
     TouchableOpacity,
@@ -933,9 +934,9 @@ const ImageViewerModal = ({ visible, images, initialIndex, onClose }) => {
         {/* Pagination dots */}
         {images.length > 1 && (
           <View style={styles.paginationDots}>
-            {images.map((_, index) => (
+            {images.map((uri, index) => (
               <View
-                key={index}
+                key={`pagination-${uri}-${index}`}
                 style={[
                   styles.paginationDot,
                   currentIndex === index && styles.paginationDotActive,
@@ -951,7 +952,14 @@ const ImageViewerModal = ({ visible, images, initialIndex, onClose }) => {
 
 export default function HomeScreen() {
   const { colors, isDark } = useTheme();
-  const { selectedCategories, minCredibility, maxDaysOld, getActiveCategory } =
+  const {
+    selectedCategories,
+    minCredibility,
+    maxDaysOld,
+    getActiveCategory,
+    useRecommendations,
+    setUseRecommendations,
+  } =
     useFilters();
   const navigation = useNavigation();
   const isFocused = useIsFocused();
@@ -996,10 +1004,11 @@ export default function HomeScreen() {
   const [offset, setOffset] = useState(0);
   const [hasMore, setHasMore] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const [useRecommendations, setUseRecommendations] = useState(true);
-
   // Step 54: Store recommendation reasons for display
   const [postReasons, setPostReasons] = useState({});
+  // Track current media index for each post in carousel
+  const [mediaIndices, setMediaIndices] = useState({});
+  const mediaScrollRefs = useRef({});
 
   const safeAlert = useCallback(
     (title, message, buttons) => {
@@ -1777,6 +1786,9 @@ export default function HomeScreen() {
 
   const renderPost = useCallback(
     ({ item }) => {
+      const SCREEN_WIDTH_LOCAL = Dimensions.get("window").width - 32;
+      const currentMediaIdx = mediaIndices[item.id] || 0;
+
       let distance = null;
       if (userLocation) {
         distance = calculateDistance(
@@ -1811,14 +1823,13 @@ export default function HomeScreen() {
 
       const isVideoType = (type) => type === "video" || type?.includes("video");
 
-      // Render media section
+      // Render swipeable media catalog
       const renderMedia = () => {
         if (!item.media_items || item.media_items.length === 0) return null;
 
-        const mediaToShow = item.media_items.slice(0, 3);
-        const extraCount = item.media_items.length - 3;
+        const totalMediaCount = item.media_items.length;
 
-        // Collect all image URLs for swipeable gallery
+        // Collect all image URLs for fullscreen gallery
         const allImageUrls = item.media_items
           .map((media) => {
             const { mediaUrl, mediaType } = getMediaInfo(media);
@@ -1826,158 +1837,98 @@ export default function HomeScreen() {
           })
           .filter(Boolean);
 
-        // Single media
-        if (mediaToShow.length === 1) {
-          const { mediaUrl, mediaType } = getMediaInfo(mediaToShow[0]);
-          if (mediaUrl && isImageType(mediaType)) {
-            return (
-              <View style={twitterStyles.mediaContainer}>
-                <SmartImage
-                  uri={mediaUrl}
-                  style={twitterStyles.singleMedia}
-                  colors={colors}
-                  onPress={() => viewImage(allImageUrls, 0)}
-                />
-              </View>
-            );
-          }
-          if (mediaUrl && isVideoType(mediaType)) {
-            return (
-              <View style={twitterStyles.mediaContainer}>
-                <VideoThumbnail
-                  uri={mediaUrl}
-                  style={twitterStyles.singleMedia}
-                  colors={colors}
-                  onPress={() => playVideo(mediaUrl)}
-                />
-              </View>
-            );
-          }
-        }
+        // Handle scroll to calculate current index
+        const handleMediaScroll = (event) => {
+          const contentOffsetX = event.nativeEvent.contentOffset.x;
+          const index = Math.round(contentOffsetX / SCREEN_WIDTH_LOCAL);
+          setMediaIndices((prev) => ({
+            ...prev,
+            [item.id]: Math.min(index, item.media_items.length - 1),
+          }));
+        };
 
-        // Two media items
-        if (mediaToShow.length === 2) {
-          let imageIndex = 0;
-          return (
-            <View
-              style={[twitterStyles.mediaContainer, twitterStyles.mediaGrid2]}
+        return (
+          <View style={twitterStyles.mediaContainerWrapper}>
+            {/* Swipeable media carousel */}
+            <ScrollView
+              ref={(ref) => {
+                mediaScrollRefs.current[item.id] = ref;
+              }}
+              horizontal
+              pagingEnabled
+              scrollEventThrottle={16}
+              onScroll={handleMediaScroll}
+              showsHorizontalScrollIndicator={false}
+              scrollsToTop={false}
+              style={twitterStyles.mediaCarousel}
+              nestedScrollEnabled={true}
+              pointerEvents="auto"
             >
-              {mediaToShow.map((media, index) => {
+              {item.media_items.map((media, index) => {
                 const { mediaUrl, mediaType } = getMediaInfo(media);
-                if (mediaUrl && isImageType(mediaType)) {
-                  const currentImageIndex = imageIndex++;
-                  return (
-                    <SmartImage
-                      key={index}
-                      uri={mediaUrl}
-                      style={twitterStyles.mediaGrid2Item}
-                      colors={colors}
-                      onPress={() => viewImage(allImageUrls, currentImageIndex)}
-                    />
-                  );
-                }
-                if (mediaUrl && isVideoType(mediaType)) {
-                  return (
-                    <VideoThumbnail
-                      key={index}
-                      uri={mediaUrl}
-                      style={twitterStyles.mediaGrid2Item}
-                      colors={colors}
-                      onPress={() => playVideo(mediaUrl)}
-                    />
-                  );
-                }
-                return null;
+                const imageUrlIndex = allImageUrls.indexOf(mediaUrl);
+
+                return (
+                  <View
+                    key={`${item.id}-media-${index}`}
+                    style={[
+                      twitterStyles.mediaSlide,
+                      { width: SCREEN_WIDTH_LOCAL },
+                    ]}
+                  >
+                    {mediaUrl && isImageType(mediaType) ? (
+                      <SmartImage
+                        uri={mediaUrl}
+                        style={twitterStyles.singleMedia}
+                        colors={colors}
+                        onPress={() =>
+                          viewImage(
+                            allImageUrls,
+                            imageUrlIndex >= 0 ? imageUrlIndex : 0,
+                          )
+                        }
+                      />
+                    ) : mediaUrl && isVideoType(mediaType) ? (
+                      <VideoThumbnail
+                        uri={mediaUrl}
+                        style={twitterStyles.singleMedia}
+                        colors={colors}
+                        onPress={() => playVideo(mediaUrl)}
+                      />
+                    ) : null}
+                  </View>
+                );
               })}
-            </View>
-          );
-        }
+            </ScrollView>
 
-        // Three+ media items
-        if (mediaToShow.length >= 3) {
-          const { mediaUrl: url1, mediaType: type1 } = getMediaInfo(
-            mediaToShow[0],
-          );
-          const { mediaUrl: url2, mediaType: type2 } = getMediaInfo(
-            mediaToShow[1],
-          );
-          const { mediaUrl: url3, mediaType: type3 } = getMediaInfo(
-            mediaToShow[2],
-          );
-
-          // Calculate image indices for each position
-          let imgIdx = 0;
-          const idx1 = isImageType(type1) ? imgIdx++ : -1;
-          const idx2 = isImageType(type2) ? imgIdx++ : -1;
-          const idx3 = isImageType(type3) ? imgIdx++ : -1;
-
-          return (
-            <View
-              style={[twitterStyles.mediaContainer, twitterStyles.mediaGrid3]}
-            >
-              <View style={twitterStyles.mediaGrid3Left}>
-                {url1 && isImageType(type1) ? (
-                  <SmartImage
-                    uri={url1}
-                    style={twitterStyles.mediaGrid3Large}
-                    colors={colors}
-                    onPress={() => viewImage(allImageUrls, idx1)}
+            {/* Dot indicators */}
+            {totalMediaCount > 1 && (
+              <View style={twitterStyles.dotIndicatorContainer}>
+                {item.media_items.map((_, index) => (
+                  <View
+                    key={`${item.id}-dot-${index}`}
+                    style={[
+                      twitterStyles.dot,
+                      index === currentMediaIdx
+                        ? twitterStyles.activeDot
+                        : twitterStyles.inactiveDot,
+                    ]}
                   />
-                ) : url1 && isVideoType(type1) ? (
-                  <VideoThumbnail
-                    uri={url1}
-                    style={twitterStyles.mediaGrid3Large}
-                    colors={colors}
-                    onPress={() => playVideo(url1)}
-                  />
-                ) : null}
+                ))}
               </View>
-              <View style={twitterStyles.mediaGrid3Right}>
-                {url2 && isImageType(type2) ? (
-                  <SmartImage
-                    uri={url2}
-                    style={twitterStyles.mediaGrid3Small}
-                    colors={colors}
-                    onPress={() => viewImage(allImageUrls, idx2)}
-                  />
-                ) : url2 && isVideoType(type2) ? (
-                  <VideoThumbnail
-                    uri={url2}
-                    style={twitterStyles.mediaGrid3Small}
-                    colors={colors}
-                    onPress={() => playVideo(url2)}
-                  />
-                ) : null}
-                <View style={twitterStyles.mediaGrid3SmallWrapper}>
-                  {url3 && isImageType(type3) ? (
-                    <SmartImage
-                      uri={url3}
-                      style={twitterStyles.mediaGrid3Small}
-                      colors={colors}
-                      onPress={() => viewImage(allImageUrls, idx3)}
-                    />
-                  ) : url3 && isVideoType(type3) ? (
-                    <VideoThumbnail
-                      uri={url3}
-                      style={twitterStyles.mediaGrid3Small}
-                      colors={colors}
-                      onPress={() => playVideo(url3)}
-                    />
-                  ) : null}
-                  {extraCount > 0 && (
-                    <View style={twitterStyles.mediaOverlay}>
-                      <Text style={twitterStyles.mediaOverlayText}>
-                        +{extraCount}
-                      </Text>
-                    </View>
-                  )}
-                </View>
-              </View>
-            </View>
-          );
-        }
+            )}
 
-        return null;
+            {/* Media counter badge */}
+            {totalMediaCount > 1 && (
+              <View style={twitterStyles.mediaCounterBadge}>
+                <Ionicons name="images" size={12} color="#fff" />
+                <Text style={twitterStyles.mediaCounterText}>
+                  {currentMediaIdx + 1}/{totalMediaCount}
+                </Text>
+              </View>
+            )}
+          </View>
+        );
       };
 
       // Get credibility label
@@ -1988,7 +1939,7 @@ export default function HomeScreen() {
       };
 
       return (
-        <Pressable
+        <View
           style={[
             twitterStyles.post,
             {
@@ -1996,9 +1947,6 @@ export default function HomeScreen() {
               backgroundColor: colors.surface,
             },
           ]}
-          onPress={() =>
-            navigation.navigate("PostDetails", { postId: item.id })
-          }
         >
           <View style={twitterStyles.postContent}>
             {/* Avatar - Shows category icon with credibility-colored background */}
@@ -2036,8 +1984,14 @@ export default function HomeScreen() {
 
             {/* Post Body */}
             <View style={twitterStyles.postBody}>
-              {/* Header: Category + Time + Distance */}
-              <View style={twitterStyles.postHeader}>
+              {/* Pressable for header/location/content navigation */}
+              <Pressable
+                onPress={() =>
+                  navigation.navigate("PostDetails", { postId: item.id })
+                }
+              >
+                {/* Header: Category + Time + Distance */}
+                <View style={twitterStyles.postHeader}>
                 <Text
                   style={[twitterStyles.displayName, { color: colors.text }]}
                 >
@@ -2062,30 +2016,6 @@ export default function HomeScreen() {
                   </>
                 )}
               </View>
-
-              {/* Step 54: Recommendation reason badge */}
-              {useRecommendations && postReasons[item.id] && (
-                <View
-                  style={[
-                    twitterStyles.recommendationBadge,
-                    { backgroundColor: colors.primary + "15" },
-                  ]}
-                >
-                  <Ionicons
-                    name="sparkles"
-                    size={12}
-                    color={colors.primary}
-                  />
-                  <Text
-                    style={[
-                      twitterStyles.recommendationBadgeText,
-                      { color: colors.primary },
-                    ]}
-                  >
-                    {postReasons[item.id]}
-                  </Text>
-                </View>
-              )}
 
               {/* Subtext: Location (tappable with visual hint) */}
               <TouchableOpacity
@@ -2129,8 +2059,9 @@ export default function HomeScreen() {
               <Text style={[twitterStyles.contentText, { color: colors.text }]}>
                 {item.content}
               </Text>
+              </Pressable>
 
-              {/* Media */}
+              {/* Media - Instagram-style catalog layout with counter */}
               {renderMedia()}
 
               {/* Action Bar */}
@@ -2152,7 +2083,7 @@ export default function HomeScreen() {
               />
             </View>
           </View>
-        </Pressable>
+        </View>
       );
     },
     [
@@ -2165,6 +2096,8 @@ export default function HomeScreen() {
       navigation,
       postReasons,
       useRecommendations,
+      mediaIndices,
+      setMediaIndices,
     ],
   );
 
@@ -2333,39 +2266,6 @@ export default function HomeScreen() {
           )}
         </TouchableOpacity>
 
-        {/* Step 52: Toggle button for recommendations vs feed */}
-        <TouchableOpacity
-          style={[
-            styles.feedToggleButton,
-            {
-              backgroundColor: useRecommendations
-                ? colors.primary
-                : colors.background,
-              borderColor: colors.border,
-            },
-          ]}
-          onPress={() => {
-            setUseRecommendations(!useRecommendations);
-            setPosts([]);
-            setOffset(0);
-            setHasMore(true);
-          }}
-          activeOpacity={0.7}
-        >
-          <Ionicons
-            name={useRecommendations ? "sparkles" : "list"}
-            size={16}
-            color={useRecommendations ? "#fff" : colors.text}
-          />
-          <Text
-            style={[
-              styles.feedToggleText,
-              { color: useRecommendations ? "#fff" : colors.text },
-            ]}
-          >
-            {useRecommendations ? "Smart Feed" : "All Posts"}
-          </Text>
-        </TouchableOpacity>
       </View>
 
       {/* Feed List */}
@@ -2641,21 +2541,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 10,
     alignItems: "center",
-  },
-  feedToggleButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 12,
-    borderWidth: 1,
-    minWidth: 90,
-    justifyContent: "center",
-  },
-  feedToggleText: {
-    fontSize: 12,
-    fontWeight: "600",
+    flexWrap: "wrap",
   },
   locationInfo: {
     flexDirection: "row",
@@ -2664,6 +2550,8 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderRadius: 14,
     gap: 12,
+    flex: 1,
+    minWidth: 220,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
@@ -3381,14 +3269,56 @@ const twitterStyles = StyleSheet.create({
     marginBottom: 12,
   },
   // Media
+  mediaContainerWrapper: {
+    position: "relative",
+    marginBottom: 12,
+  },
   mediaContainer: {
     borderRadius: 16,
     overflow: "hidden",
-    marginBottom: 12,
+  },
+  // Swipeable carousel
+  mediaCarousel: {
+    borderRadius: 16,
+    overflow: "hidden",
+    height: 250,
+  },
+  mediaSlide: {
+    borderRadius: 16,
+    overflow: "hidden",
+    height: 250,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  // Dot indicators
+  dotIndicatorContainer: {
+    position: "absolute",
+    bottom: 12,
+    left: 0,
+    right: 0,
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 6,
+    zIndex: 5,
+  },
+  dot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  activeDot: {
+    backgroundColor: "#fff",
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  inactiveDot: {
+    backgroundColor: "rgba(255, 255, 255, 0.5)",
   },
   singleMedia: {
     width: "100%",
-    height: 200,
+    height: "100%",
     borderRadius: 16,
   },
   mediaGrid2: {
@@ -3437,6 +3367,25 @@ const twitterStyles = StyleSheet.create({
     color: "#fff",
     fontSize: 22,
     fontWeight: "700",
+  },
+  // Media counter badge
+  mediaCounterBadge: {
+    position: "absolute",
+    top: 8,
+    right: 8,
+    backgroundColor: "rgba(0, 0, 0, 0.7)",
+    borderRadius: 16,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    zIndex: 10,
+  },
+  mediaCounterText: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "600",
   },
   // Action bar
   actionBar: {

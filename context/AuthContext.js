@@ -1,4 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as Device from "expo-device";
 import Constants from "expo-constants";
 import { createContext, useContext, useEffect, useState } from "react";
 import { Platform } from "react-native";
@@ -35,17 +36,21 @@ export function AuthProvider({ children }) {
   const getAuthBaseCandidates = () => {
     const candidates = new Set([API_BASE_URL]);
     const expoHost = Constants.expoConfig?.hostUri?.split(":")?.[0];
+    const isPhysicalDevice = Device.isDevice === true || Constants.isDevice === true;
+    const isAndroidEmulator = Platform.OS === "android" && isPhysicalDevice === false;
 
     if (expoHost) {
       candidates.add(`http://${expoHost}:8000`);
     }
 
-    if (Platform.OS === "android") {
+    if (isAndroidEmulator) {
       candidates.add("http://10.0.2.2:8000");
       candidates.add("http://10.0.3.2:8000");
     }
 
-    candidates.add("http://localhost:8000");
+    if (!isPhysicalDevice || Platform.OS === "web") {
+      candidates.add("http://localhost:8000");
+    }
 
     return Array.from(candidates).filter(Boolean);
   };

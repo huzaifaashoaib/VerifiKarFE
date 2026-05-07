@@ -1,6 +1,6 @@
 {
   "expo": {
-    "owner": "utanveer485",
+    "owner": "usmmmmanT",
     "name": "VerifiKar",
     "slug": "verifikar-ui",
     "version": "1.0.0",
@@ -57,7 +57,7 @@
     ],
     "extra": {
       "eas": {
-        "projectId": "cd9d2a01-1003-4c72-9ab2-990508be912c"
+        "projectId": "bc5d4142-4335-41e3-806d-aa7fc1b49489"
       }
     }
   }

@@ -15,6 +15,7 @@ export const FilterProvider = ({ children }) => {
   const [selectedCategories, setSelectedCategories] = useState(['all']);
   const [minCredibility, setMinCredibility] = useState(0.5);
   const [maxDaysOld, setMaxDaysOld] = useState(7);
+  const [useRecommendations, setUseRecommendations] = useState(true);
 
   const toggleCategory = (categoryId) => {
     if (categoryId === 'all') {
@@ -57,6 +58,8 @@ export const FilterProvider = ({ children }) => {
         setMinCredibility,
         maxDaysOld,
         setMaxDaysOld,
+        useRecommendations,
+        setUseRecommendations,
         resetFilters,
         getActiveCategory,
       }}
