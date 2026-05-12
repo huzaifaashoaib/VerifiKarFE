@@ -1309,7 +1309,8 @@ export default function HomeScreen() {
       queryParams.append("lat", userLocation.latitude.toString());
       queryParams.append("lon", userLocation.longitude.toString());
       queryParams.append("radius_km", "50");
-      queryParams.append("max_days_old", maxDaysOld.toString());
+      // Force relaxed defaults until filter UI refreshes correctly.
+      queryParams.append("max_days_old", "30");
 
       // Add category filter if not 'all'
       const activeCategory = getActiveCategory();
@@ -1318,9 +1319,7 @@ export default function HomeScreen() {
       }
 
       // Add credibility filter
-      if (minCredibility) {
-        queryParams.append("min_credibility", minCredibility.toString());
-      }
+      queryParams.append("min_credibility", "0");
 
       queryParams.append("skip", "0");
       queryParams.append("limit", "20");
@@ -1380,6 +1379,10 @@ export default function HomeScreen() {
         console.log("[Feed] Posts received:", data.details.posts.length);
         if (data.details.posts.length > 0) {
           console.log("[Feed] First post id:", data.details.posts[0].id);
+          console.log(
+            "[Feed] First post media_items:",
+            data.details.posts?.[0]?.media_items,
+          );
         }
         // Sort posts by created_at from latest to earliest
         const sortedPosts = data.details.posts.sort((a, b) => {

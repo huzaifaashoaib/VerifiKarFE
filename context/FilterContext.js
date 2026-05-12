@@ -13,8 +13,8 @@ export const useFilters = () => {
 export const FilterProvider = ({ children }) => {
   const [radiusKm, setRadiusKm] = useState(10);
   const [selectedCategories, setSelectedCategories] = useState(['all']);
-  const [minCredibility, setMinCredibility] = useState(0.5);
-  const [maxDaysOld, setMaxDaysOld] = useState(7);
+  const [minCredibility, setMinCredibility] = useState(0);
+  const [maxDaysOld, setMaxDaysOld] = useState(30);
 
   const toggleCategory = (categoryId) => {
     if (categoryId === 'all') {
@@ -33,8 +33,8 @@ export const FilterProvider = ({ children }) => {
   const resetFilters = () => {
     setRadiusKm(10);
     setSelectedCategories(['all']);
-    setMinCredibility(0.5);
-    setMaxDaysOld(7);
+    setMinCredibility(0);
+    setMaxDaysOld(30);
   };
 
   const getActiveCategory = () => {
