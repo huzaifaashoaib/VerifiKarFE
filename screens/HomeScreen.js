@@ -1598,19 +1598,37 @@ export default function HomeScreen() {
 
       console.log("[Feed] ✅ Received", feedData.length, "posts");
 
+      // Remove duplicate posts to avoid duplicate keys in lists
+      const seenPostIds = new Set();
+      const uniqueFeedData = [];
+      for (const post of feedData) {
+        if (!seenPostIds.has(post.id)) {
+          seenPostIds.add(post.id);
+          uniqueFeedData.push(post);
+        }
+      }
+
       // Step 53: Update posts based on pagination offset
       if (paginationOffset === 0) {
         // Initial load - replace posts
         console.log("[Feed] Setting initial posts");
-        setPosts(feedData);
+        setPosts(uniqueFeedData);
         setOffset(0);
-        setHasMore(feedData.length >= 20);
+        setHasMore(uniqueFeedData.length >= 20);
       } else {
         // Load more - append to existing posts
-        console.log("[Feed] Appending", feedData.length, "posts");
-        setPosts((prev) => [...prev, ...feedData]);
+        console.log("[Feed] Appending", uniqueFeedData.length, "posts");
+        setPosts((prev) => {
+          const merged = [...prev, ...uniqueFeedData];
+          const seen = new Set();
+          return merged.filter((post) => {
+            if (seen.has(post.id)) return false;
+            seen.add(post.id);
+            return true;
+          });
+        });
         setOffset(paginationOffset);
-        setHasMore(feedData.length >= 20);
+        setHasMore(uniqueFeedData.length >= 20);
       }
 
       // Cache the fresh data
@@ -1619,7 +1637,7 @@ export default function HomeScreen() {
         await AsyncStorage.setItem(
           cacheKey,
           JSON.stringify({
-            posts: feedData,
+            posts: uniqueFeedData,
             timestamp: Date.now(),
           }),
         );
@@ -1629,7 +1647,7 @@ export default function HomeScreen() {
       }
 
       // Start background geocoding after posts are set
-      setTimeout(() => batchGeocodeLocations(feedData), 100);
+      setTimeout(() => batchGeocodeLocations(uniqueFeedData), 100);
     } catch (error) {
       console.error("[Feed] ❌ Error loading feed:", error);
       // Only show error if we have no cached data
@@ -2262,7 +2280,7 @@ export default function HomeScreen() {
       <FlatList
         data={posts}
         renderItem={renderPost}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item, index) => `${item.id}-${index}`}
         showsVerticalScrollIndicator={false}
         ItemSeparatorComponent={() => null}
         // Performance optimizations
