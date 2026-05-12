@@ -429,7 +429,6 @@ export default function ReportScreen() {
             description={description}
             location={location}
             selectedCoordinates={selectedCoordinates}
-            selectedCategory={selectedCategory}
             onSubmit={handleSubmit}
             onEditMedia={() => goToStepForEdit(STEPS.CAMERA)}
             onEditDescription={() => goToStepForEdit(STEPS.DESCRIPTION)}

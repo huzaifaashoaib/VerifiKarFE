@@ -957,8 +957,6 @@ export default function HomeScreen() {
     minCredibility,
     maxDaysOld,
     getActiveCategory,
-    useRecommendations,
-    setUseRecommendations,
   } =
     useFilters();
   const navigation = useNavigation();
@@ -1559,9 +1557,7 @@ export default function HomeScreen() {
         // Initial load - show loading indicator or cached data
         if (posts.length === 0) {
           try {
-            const cacheKey = useRecommendations
-              ? "@verifikar_recommendations_cache"
-              : "@verifikar_feed_cache";
+            const cacheKey = "@verifikar_feed_cache";
             const cachedData = await AsyncStorage.getItem(cacheKey);
             if (cachedData) {
               const { posts: cachedPosts, timestamp } = JSON.parse(cachedData);
@@ -1594,10 +1590,8 @@ export default function HomeScreen() {
       }
 
       // Step 52: Fetch from recommendations or feed endpoint
-      console.log("[Feed] Fetching from:", useRecommendations ? "recommendations" : "feed", "endpoint");
-      const feedData = useRecommendations
-        ? await fetchRecommendations(paginationOffset)
-        : await fetchFeed();
+      console.log("[Feed] Fetching from feed endpoint");
+      const feedData = await fetchFeed();
 
       console.log("[Feed] ✅ Received", feedData.length, "posts");
 
@@ -1618,9 +1612,7 @@ export default function HomeScreen() {
 
       // Cache the fresh data
       try {
-        const cacheKey = useRecommendations
-          ? "@verifikar_recommendations_cache"
-          : "@verifikar_feed_cache";
+        const cacheKey = "@verifikar_feed_cache";
         await AsyncStorage.setItem(
           cacheKey,
           JSON.stringify({
@@ -1679,17 +1671,13 @@ export default function HomeScreen() {
       }
 
       // Fetch fresh data
-      const feedData = useRecommendations
-        ? await fetchRecommendations(0)
-        : await fetchFeed();
+      const feedData = await fetchFeed();
       setPosts(feedData);
       setHasMore(feedData.length >= 20);
 
       // Update cache on refresh
       try {
-        const cacheKey = useRecommendations
-          ? "@verifikar_recommendations_cache"
-          : "@verifikar_feed_cache";
+        const cacheKey = "@verifikar_feed_cache";
         await AsyncStorage.setItem(
           cacheKey,
           JSON.stringify({
@@ -2095,7 +2083,6 @@ export default function HomeScreen() {
       showLocationInfo,
       navigation,
       postReasons,
-      useRecommendations,
       mediaIndices,
       setMediaIndices,
     ],

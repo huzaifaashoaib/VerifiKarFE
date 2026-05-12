@@ -16,7 +16,6 @@ export default function ReviewStep({
   description,
   location,
   selectedCoordinates,
-  selectedCategory,
   onSubmit,
   onEditMedia,
   onEditDescription,
@@ -24,20 +23,6 @@ export default function ReviewStep({
   isSubmitting,
 }) {
   const { colors, isDark } = useTheme();
-
-  // Templates to get the label
-  const templates = [
-    { id: 1, icon: "car", label: "Accident", color: "#64748b" },
-    { id: 2, icon: "flame", label: "Fire", color: "#f97316" },
-    { id: 3, icon: "water", label: "Flood", color: "#3b82f6" },
-    { id: 4, icon: "construct", label: "Infrastructure", color: "#8b5cf6" },
-    { id: 5, icon: "people", label: "Gathering", color: "#10b981" },
-    { id: 6, icon: "warning", label: "Emergency", color: "#ef4444" },
-    { id: 7, icon: "megaphone", label: "Protest", color: "#eab308" },
-    { id: 8, icon: "ellipsis-horizontal", label: "Other", color: "#6b7280" },
-  ];
-
-  const categoryInfo = selectedCategory ? templates.find(t => t.id === selectedCategory) : null;
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>

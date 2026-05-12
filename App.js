@@ -680,14 +680,10 @@ function AuthNavigator() {
 
 function MainNavigator() {
   const { colors } = useTheme();
-  const { useRecommendations, setUseRecommendations } = useFilters();
-  const [showFeedModeModal, setShowFeedModeModal] = useState(false);
 
   const HeaderTitle = () => (
-    <TouchableOpacity
+    <View
       style={{ flexDirection: "row", alignItems: "center" }}
-      onPress={() => setShowFeedModeModal(true)}
-      activeOpacity={0.7}
     >
       <Ionicons
         name="shield-checkmark"
@@ -701,7 +697,7 @@ function MainNavigator() {
       <Text style={{ fontSize: 20, fontWeight: "800", color: colors.primary }}>
         Kar
       </Text>
-    </TouchableOpacity>
+    </View>
   );
 
   return (
@@ -766,82 +762,6 @@ function MainNavigator() {
         options={{ title: "Profile" }}
       />
       </Tab.Navigator>
-
-      <Modal
-        visible={showFeedModeModal}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => setShowFeedModeModal(false)}
-      >
-        <View style={styles.feedModeOverlay}>
-          <TouchableOpacity
-            style={styles.feedModeBackdrop}
-            activeOpacity={1}
-            onPress={() => setShowFeedModeModal(false)}
-          />
-          <View style={[styles.feedModeCard, { backgroundColor: colors.surface }]}>
-            <Text style={[styles.feedModeTitle, { color: colors.text }]}> 
-              Feed Mode
-            </Text>
-            <Text style={[styles.feedModeSubtitle, { color: colors.gray }]}> 
-              Choose the feed source
-            </Text>
-
-            <TouchableOpacity
-              style={[
-                styles.feedModeOption,
-                useRecommendations && styles.feedModeOptionActive,
-                {
-                  borderColor: colors.border,
-                  backgroundColor: useRecommendations
-                    ? colors.primary + "20"
-                    : colors.background,
-                },
-              ]}
-              onPress={() => {
-                setUseRecommendations(true);
-                setShowFeedModeModal(false);
-              }}
-            >
-              <Ionicons name="sparkles" size={18} color={colors.primary} />
-              <Text style={[styles.feedModeOptionText, { color: colors.text }]}> 
-                Smart Feed 
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[
-                styles.feedModeOption,
-                !useRecommendations && styles.feedModeOptionActive,
-                {
-                  borderColor: colors.border,
-                  backgroundColor: !useRecommendations
-                    ? colors.primary + "20"
-                    : colors.background,
-                },
-              ]}
-              onPress={() => {
-                setUseRecommendations(false);
-                setShowFeedModeModal(false);
-              }}
-            >
-              <Ionicons name="list" size={18} color={colors.text} />
-              <Text style={[styles.feedModeOptionText, { color: colors.text }]}> 
-                All Posts 
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.feedModeClose, { borderColor: colors.border }]}
-              onPress={() => setShowFeedModeModal(false)}
-            >
-              <Text style={[styles.feedModeCloseText, { color: colors.text }]}> 
-                Close
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
     </>
   );
 }
