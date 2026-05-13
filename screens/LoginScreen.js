@@ -1,16 +1,16 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useState } from "react";
 import {
-  ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-  Dimensions,
+    ActivityIndicator,
+    Dimensions,
+    KeyboardAvoidingView,
+    Platform,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from "react-native";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../styles/ThemeContext";
@@ -77,14 +77,23 @@ export default function LoginScreen({ navigation }) {
           {/* Header Section */}
           <View style={styles.headerSection}>
             {/* Logo */}
-            <View style={[styles.logoContainer, { backgroundColor: colors.primary }]}>
+            <View
+              style={[
+                styles.logoContainer,
+                { backgroundColor: colors.primary },
+              ]}
+            >
               <Ionicons name="shield-checkmark" size={32} color="#fff" />
             </View>
 
             {/* App Name */}
             <View style={styles.appNameContainer}>
-              <Text style={[styles.appNameVerifi, { color: colors.text }]}>Verifi</Text>
-              <Text style={[styles.appNameKar, { color: colors.primary }]}>Kar</Text>
+              <Text style={[styles.appNameVerifi, { color: colors.text }]}>
+                Verifi
+              </Text>
+              <Text style={[styles.appNameKar, { color: colors.primary }]}>
+                Kar
+              </Text>
             </View>
 
             {/* Tagline */}
@@ -95,7 +104,9 @@ export default function LoginScreen({ navigation }) {
 
           {/* Welcome Text */}
           <View style={styles.welcomeSection}>
-            <Text style={[styles.welcomeTitle, { color: colors.text }]}>Welcome back</Text>
+            <Text style={[styles.welcomeTitle, { color: colors.text }]}>
+              Welcome back
+            </Text>
             <Text style={[styles.welcomeSubtitle, { color: colors.gray }]}>
               Sign in to continue reporting
             </Text>
@@ -105,17 +116,28 @@ export default function LoginScreen({ navigation }) {
           <View style={styles.formSection}>
             {/* Email Input */}
             <View style={styles.inputGroup}>
-              <Text style={[styles.inputLabel, { color: colors.text }]}>Email</Text>
+              <Text style={[styles.inputLabel, { color: colors.text }]}>
+                Email
+              </Text>
               <View
                 style={[
                   styles.inputContainer,
                   {
                     backgroundColor: isDark ? "#1a1a1a" : "#f8f9fa",
-                    borderColor: errors.email ? "#ef4444" : isDark ? "#333" : "#e5e5e5",
+                    borderColor: errors.email
+                      ? "#ef4444"
+                      : isDark
+                        ? "#333"
+                        : "#e5e5e5",
                   },
                 ]}
               >
-                <Ionicons name="mail-outline" size={20} color={colors.gray} style={styles.inputIcon} />
+                <Ionicons
+                  name="mail-outline"
+                  size={20}
+                  color={colors.gray}
+                  style={styles.inputIcon}
+                />
                 <TextInput
                   style={[styles.input, { color: colors.text }]}
                   value={email}
@@ -140,17 +162,28 @@ export default function LoginScreen({ navigation }) {
 
             {/* Password Input */}
             <View style={styles.inputGroup}>
-              <Text style={[styles.inputLabel, { color: colors.text }]}>Password</Text>
+              <Text style={[styles.inputLabel, { color: colors.text }]}>
+                Password
+              </Text>
               <View
                 style={[
                   styles.inputContainer,
                   {
                     backgroundColor: isDark ? "#1a1a1a" : "#f8f9fa",
-                    borderColor: errors.password ? "#ef4444" : isDark ? "#333" : "#e5e5e5",
+                    borderColor: errors.password
+                      ? "#ef4444"
+                      : isDark
+                        ? "#333"
+                        : "#e5e5e5",
                   },
                 ]}
               >
-                <Ionicons name="lock-closed-outline" size={20} color={colors.gray} style={styles.inputIcon} />
+                <Ionicons
+                  name="lock-closed-outline"
+                  size={20}
+                  color={colors.gray}
+                  style={styles.inputIcon}
+                />
                 <TextInput
                   style={[styles.input, { color: colors.text }]}
                   value={password}
@@ -163,7 +196,10 @@ export default function LoginScreen({ navigation }) {
                   secureTextEntry={!showPassword}
                   autoComplete="password"
                 />
-                <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeButton}>
+                <TouchableOpacity
+                  onPress={() => setShowPassword(!showPassword)}
+                  style={styles.eyeButton}
+                >
                   <Ionicons
                     name={showPassword ? "eye-off-outline" : "eye-outline"}
                     size={20}
@@ -181,7 +217,9 @@ export default function LoginScreen({ navigation }) {
 
             {/* Forgot Password */}
             <TouchableOpacity style={styles.forgotButton}>
-              <Text style={[styles.forgotText, { color: colors.primary }]}>Forgot password?</Text>
+              <Text style={[styles.forgotText, { color: colors.primary }]}>
+                Forgot password?
+              </Text>
             </TouchableOpacity>
 
             {/* Login Button */}
@@ -200,42 +238,17 @@ export default function LoginScreen({ navigation }) {
                 </>
               )}
             </TouchableOpacity>
-
-            {/* Divider */}
-            <View style={styles.dividerContainer}>
-              <View style={[styles.dividerLine, { backgroundColor: isDark ? "#333" : "#e5e5e5" }]} />
-              <Text style={[styles.dividerText, { color: colors.gray }]}>or</Text>
-              <View style={[styles.dividerLine, { backgroundColor: isDark ? "#333" : "#e5e5e5" }]} />
-            </View>
-
-            {/* Social Login Buttons */}
-            <View style={styles.socialButtons}>
-              <TouchableOpacity
-                style={[styles.socialButton, { backgroundColor: isDark ? "#1a1a1a" : "#f8f9fa" }]}
-                activeOpacity={0.7}
-              >
-                <Ionicons name="logo-google" size={20} color={colors.text} />
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.socialButton, { backgroundColor: isDark ? "#1a1a1a" : "#f8f9fa" }]}
-                activeOpacity={0.7}
-              >
-                <Ionicons name="logo-apple" size={20} color={colors.text} />
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.socialButton, { backgroundColor: isDark ? "#1a1a1a" : "#f8f9fa" }]}
-                activeOpacity={0.7}
-              >
-                <Ionicons name="logo-facebook" size={20} color="#1877F2" />
-              </TouchableOpacity>
-            </View>
           </View>
 
           {/* Sign Up Link */}
           <View style={styles.signupSection}>
-            <Text style={[styles.signupText, { color: colors.gray }]}>Don't have an account? </Text>
+            <Text style={[styles.signupText, { color: colors.gray }]}>
+              Don't have an account?{" "}
+            </Text>
             <TouchableOpacity onPress={() => navigation.navigate("Signup")}>
-              <Text style={[styles.signupLink, { color: colors.primary }]}>Sign Up</Text>
+              <Text style={[styles.signupLink, { color: colors.primary }]}>
+                Sign Up
+              </Text>
             </TouchableOpacity>
           </View>
         </ScrollView>
@@ -363,31 +376,6 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 16,
     fontWeight: "700",
-  },
-  dividerContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginVertical: 28,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-  },
-  dividerText: {
-    paddingHorizontal: 16,
-    fontSize: 13,
-  },
-  socialButtons: {
-    flexDirection: "row",
-    justifyContent: "center",
-    gap: 16,
-  },
-  socialButton: {
-    width: 56,
-    height: 56,
-    borderRadius: 16,
-    justifyContent: "center",
-    alignItems: "center",
   },
   signupSection: {
     flexDirection: "row",

@@ -2,23 +2,23 @@ import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Slider from "@react-native-community/slider";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
-import { NavigationContainer } from "@react-navigation/native";
+import { NavigationContainer, useNavigation } from "@react-navigation/native";
 import { createStackNavigator } from "@react-navigation/stack";
 import * as Device from "expo-device";
 import * as Location from "expo-location";
 import * as Notifications from "expo-notifications";
 import { useEffect, useRef, useState } from "react";
 import {
-    ActivityIndicator,
-    Alert,
-    FlatList,
-    Modal,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  Modal,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import { setupCompleteNotificationFlow } from "./services/notificationService";
 
@@ -39,18 +39,38 @@ import { ThemeProvider, useTheme } from "./styles/ThemeContext";
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
 
+// Cache the global Search modal state so it can be restored after navigating to PostDetails.
+// This avoids losing search results when the header unmounts while on stack screens.
+const __searchStateCache = {
+  visible: false,
+  query: "",
+  results: [],
+  offset: 0,
+  hasMore: true,
+  error: "",
+  hasRun: false,
+  shouldReopen: false,
+};
+
 function HeaderButtons() {
+  const navigation = useNavigation();
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [filterVisible, setFilterVisible] = useState(false);
-  const [searchVisible, setSearchVisible] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState([]);
+  const [searchVisible, setSearchVisible] = useState(
+    __searchStateCache.visible,
+  );
+  const [searchQuery, setSearchQuery] = useState(__searchStateCache.query);
+  const [searchResults, setSearchResults] = useState(
+    __searchStateCache.results,
+  );
   const [isSearching, setIsSearching] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const [searchOffset, setSearchOffset] = useState(0);
-  const [hasMoreResults, setHasMoreResults] = useState(true);
-  const [searchError, setSearchError] = useState("");
-  const [searchHasRun, setSearchHasRun] = useState(false);
+  const [searchOffset, setSearchOffset] = useState(__searchStateCache.offset);
+  const [hasMoreResults, setHasMoreResults] = useState(
+    __searchStateCache.hasMore,
+  );
+  const [searchError, setSearchError] = useState(__searchStateCache.error);
+  const [searchHasRun, setSearchHasRun] = useState(__searchStateCache.hasRun);
   const lastSearchLocationRef = useRef({
     lat: 24.8607,
     lon: 67.0099,
@@ -83,7 +103,37 @@ function HeaderButtons() {
 
   const handleSearch = () => {
     setSearchVisible(true);
+    __searchStateCache.visible = true;
   };
+
+  // If we navigated to PostDetails from search, reopen the Search modal when returning.
+  useEffect(() => {
+    if (__searchStateCache.shouldReopen) {
+      __searchStateCache.shouldReopen = false;
+      setSearchVisible(true);
+      __searchStateCache.visible = true;
+    }
+  }, []);
+
+  // Keep cache in sync so state survives unmount/mount across stack navigation.
+  useEffect(() => {
+    __searchStateCache.query = searchQuery;
+  }, [searchQuery]);
+  useEffect(() => {
+    __searchStateCache.results = searchResults;
+  }, [searchResults]);
+  useEffect(() => {
+    __searchStateCache.offset = searchOffset;
+  }, [searchOffset]);
+  useEffect(() => {
+    __searchStateCache.hasMore = hasMoreResults;
+  }, [hasMoreResults]);
+  useEffect(() => {
+    __searchStateCache.error = searchError;
+  }, [searchError]);
+  useEffect(() => {
+    __searchStateCache.hasRun = searchHasRun;
+  }, [searchHasRun]);
 
   // New logic: avoid passing TextInput events into runSearch.
   const handleSearchSubmit = () => runSearch(false);
@@ -196,22 +246,45 @@ function HeaderButtons() {
     }
   };
 
-  const closeSearchModal = () => {
+  const closeSearchModal = (options = {}) => {
+    const preserveState = options.preserveState === true;
+    const reopenOnReturn = options.reopenOnReturn === true;
+
     setSearchVisible(false);
-    setSearchQuery("");
-    setSearchResults([]);
-    setSearchError("");
-    setSearchHasRun(false);
-    setSearchOffset(0);
-    setHasMoreResults(true);
-    setIsSearching(false);
-    setIsLoadingMore(false);
+    __searchStateCache.visible = false;
+    __searchStateCache.shouldReopen = reopenOnReturn;
+
+    if (!preserveState) {
+      setSearchQuery("");
+      setSearchResults([]);
+      setSearchError("");
+      setSearchHasRun(false);
+      setSearchOffset(0);
+      setHasMoreResults(true);
+      setIsSearching(false);
+      setIsLoadingMore(false);
+
+      __searchStateCache.query = "";
+      __searchStateCache.results = [];
+      __searchStateCache.error = "";
+      __searchStateCache.hasRun = false;
+      __searchStateCache.offset = 0;
+      __searchStateCache.hasMore = true;
+    }
   };
 
   const renderSearchItem = ({ item }) => {
-    const created = new Date(item.created_at).toLocaleString();
+    const created = item?.created_at
+      ? new Date(item.created_at).toLocaleString()
+      : "";
     return (
-      <View
+      <TouchableOpacity
+        activeOpacity={0.85}
+        onPress={() => {
+          if (!item?.id) return;
+          closeSearchModal({ preserveState: true, reopenOnReturn: true });
+          navigation.navigate("PostDetails", { postId: item.id });
+        }}
         style={[
           styles.searchResultCard,
           { backgroundColor: colors.background, borderColor: colors.border },
@@ -232,10 +305,12 @@ function HeaderButtons() {
             Credibility {Math.round((item.credibility_score || 0) * 100)}%
           </Text>
         </View>
-        <Text style={[styles.searchMetaText, { color: colors.gray }]}>
-          {created}
-        </Text>
-      </View>
+        {created ? (
+          <Text style={[styles.searchMetaText, { color: colors.gray }]}>
+            {created}
+          </Text>
+        ) : null}
+      </TouchableOpacity>
     );
   };
 
@@ -682,9 +757,7 @@ function MainNavigator() {
   const { colors } = useTheme();
 
   const HeaderTitle = () => (
-    <View
-      style={{ flexDirection: "row", alignItems: "center" }}
-    >
+    <View style={{ flexDirection: "row", alignItems: "center" }}>
       <Ionicons
         name="shield-checkmark"
         size={24}
@@ -725,42 +798,44 @@ function MainNavigator() {
           tabBarIcon: ({ color, size }) => {
             let iconName;
             if (route.name === "Home") iconName = "home-outline";
-            else if (route.name === "Report") iconName = "document-text-outline";
+            else if (route.name === "Report")
+              iconName = "document-text-outline";
             else if (route.name === "Discover") iconName = "compass-outline";
             else if (route.name === "Navigate") iconName = "navigate-outline";
-            else if (route.name === "Profile") iconName = "person-circle-outline";
+            else if (route.name === "Profile")
+              iconName = "person-circle-outline";
             return <Ionicons name={iconName} size={size} color={color} />;
           },
         })}
       >
-      <Tab.Screen
-        name="Home"
-        component={HomeScreen}
-        options={{ title: "Home" }}
-      />
-      <Tab.Screen
-        name="Report"
-        component={ReportScreen}
-        options={{ title: "Report" }}
-      />
-      <Tab.Screen
-        name="Discover"
-        component={DiscoverScreen}
-        options={{ title: "Discover" }}
-      />
-      <Tab.Screen
-        name="Navigate"
-        component={RoutingScreen}
-        options={{
-          title: "Navigate",
-          headerShown: false,
-        }}
-      />
-      <Tab.Screen
-        name="Profile"
-        component={ProfileScreen}
-        options={{ title: "Profile" }}
-      />
+        <Tab.Screen
+          name="Home"
+          component={HomeScreen}
+          options={{ title: "Home" }}
+        />
+        <Tab.Screen
+          name="Report"
+          component={ReportScreen}
+          options={{ title: "Report" }}
+        />
+        <Tab.Screen
+          name="Discover"
+          component={DiscoverScreen}
+          options={{ title: "Discover" }}
+        />
+        <Tab.Screen
+          name="Navigate"
+          component={RoutingScreen}
+          options={{
+            title: "Navigate",
+            headerShown: false,
+          }}
+        />
+        <Tab.Screen
+          name="Profile"
+          component={ProfileScreen}
+          options={{ title: "Profile" }}
+        />
       </Tab.Navigator>
     </>
   );
